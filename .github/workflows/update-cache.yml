@@ -1,0 +1,29 @@
+# GitHub Actions workflow: refreshes the Saturday Lineup score cache.
+# Put this file at .github/workflows/update-cache.yml in the scheduler repo.
+#
+# Add two repository secrets (Settings → Secrets and variables → Actions):
+#   FIREBASE_SERVICE_ACCOUNT  — paste the whole firebase-key.json contents
+#   CFBD_API_KEY              — your CollegeFootballData API key
+name: Update score cache
+
+on:
+  schedule:
+    # Every 5 minutes (GitHub's minimum). Times can drift a few minutes under
+    # load — that's fine; the app tolerates a stale cache and falls back to
+    # CFBD if it ever gets too old.
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}   # lets you run it by hand from the Actions tab
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Refresh cache
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+        run: python3 update_cache.py
