@@ -20,6 +20,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 
 PROJECT = "saturday-lineup"
@@ -143,6 +144,10 @@ def record_run(token: str) -> None:
     urllib.request.urlopen(req, timeout=20).read()
 
 
+class QuotaExhausted(Exception):
+    """CFBD's monthly call allowance is spent."""
+
+
 def main():
     key = json.loads(os.environ["FIREBASE_SERVICE_ACCOUNT"])
     cfbd = os.environ["CFBD_API_KEY"]
@@ -161,10 +166,15 @@ def main():
 
     season = current_season()
     week = current_week(cfbd, season)
-    games = cfbd_get("/games", cfbd, year=season, week=week,
-                     seasonType="regular", division="fbs")
-    lines = cfbd_get("/lines", cfbd, year=season, week=week,
-                     seasonType="regular")
+    try:
+        games = cfbd_get("/games", cfbd, year=season, week=week,
+                         seasonType="regular", division="fbs")
+        lines = cfbd_get("/lines", cfbd, year=season, week=week,
+                         seasonType="regular")
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            raise QuotaExhausted() from e
+        raise
 
     body = {"fields": {
         "gamesJson": {"stringValue": json.dumps(games)},
@@ -185,4 +195,14 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except QuotaExhausted:
+        # Exit 0 on purpose. Running out of monthly calls is expected and
+        # self-correcting, and a red X every five minutes until the plan
+        # resets would bury a real failure in noise. The app keeps serving
+        # the cached slate meanwhile.
+        print("CFBD monthly quota exhausted — leaving the existing cache in "
+              "place. This clears when the plan resets; the app serves the "
+              "cached slate until then.")
+        sys.exit(0)
