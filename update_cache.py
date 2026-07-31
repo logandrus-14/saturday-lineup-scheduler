@@ -134,6 +134,19 @@ def minutes_since_last_run(token: str):
 
 
 def record_run(token: str) -> None:
+    """Mark that we are about to spend CFBD calls.
+
+    Called BEFORE the calls, not after they succeed. It used to be the last
+    line of a successful run, which deadlocked: a 429 raised before it, so
+    the marker was never written, so minutes_since_last_run stayed None, so
+    the throttle never engaged, so every 5-minute wake-up spent three more
+    CFBD calls — roughly 26,000 a month, which is what exhausted the quota
+    that caused the 429. The failure kept causing itself, silently, and the
+    cache sat 9 days stale in July 2026.
+
+    Recording the attempt instead means a bad run costs one throttle
+    interval rather than an endless retry loop.
+    """
     body = {"fields": {"lastRun": {"timestampValue": dt.datetime.now(
         dt.timezone.utc).isoformat().replace("+00:00", "Z")}}}
     req = urllib.request.Request(
@@ -286,12 +299,18 @@ def main():
               f"threshold today is {max_age} min — skipping, no CFBD calls")
         return
 
+    # Claim the slot before spending ANYTHING. current_week hits /calendar,
+    # so this has to come first or that one call escapes the throttle. If
+    # anything below fails — quota, network — the next wake-up still waits a
+    # full interval instead of hammering CFBD every five minutes.
+    record_run(token)
+
     season = current_season()
     week = current_week(cfbd, season)
 
-    # Boards first, and deliberately before any CFBD call: revealing a
-    # pick needs no CFBD data, so running out of quota must never stop
-    # picks from revealing at kickoff.
+    # Boards before the remaining CFBD calls: revealing a pick needs no
+    # CFBD data, so running out of quota must never stop picks revealing
+    # at kickoff.
     try:
         boards, read = write_boards(token, season, week)
         print(f"wrote {boards} group board(s) from {read} lineup(s)")
@@ -343,7 +362,6 @@ def main():
     except Exception as e:
         print(f"rankings cache skipped: {e}")
 
-    record_run(token)
     print(f"cached {season} week {week}: {len(games)} games, {len(lines)} lines")
 
 
