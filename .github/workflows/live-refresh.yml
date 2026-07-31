@@ -1,0 +1,55 @@
+# GitHub Actions workflow: keeps scores fresh while games are on.
+# Put this file at .github/workflows/live-refresh.yml in the scheduler repo.
+#
+# Uses the same two repository secrets as update-cache.yml:
+#   FIREBASE_SERVICE_ACCOUNT  — the whole firebase-key.json contents
+#   CFBD_API_KEY              — your CollegeFootballData API key
+#
+# WHY THIS EXISTS
+# ---------------
+# update-cache.yml asks for a run every 5 minutes. GitHub does not honour
+# that on free runners: measured across 30 consecutive runs in July 2026,
+# the real gap was a median of 93 minutes and as much as 210. Scores that
+# old make a live board pointless.
+#
+# A scheduled run is a request. A job that is already running is not. So
+# this starts a job a few times a day and lets it stay awake, refreshing
+# every 60 seconds from the inside. GitHub's delay then only decides when
+# the shift starts, not how fresh the scores are once it is going.
+#
+# The script ends the shift early as soon as every game is final, so this
+# costs nothing overnight.
+name: Live score refresh
+
+on:
+  schedule:
+    # Several attempts across the football day, in UTC. Games run roughly
+    # 16:00 UTC (noon ET) through 06:00 UTC. Each of these only needs ONE
+    # to actually land — the job then covers hours on its own — so they
+    # overlap deliberately, because most will be delayed or dropped.
+    - cron: '0 15,17,19,21,23 * * 4,5,6,0'   # Thu/Fri/Sat/Sun
+    - cron: '0 1,3 * * 5,6,0,1'              # after midnight UTC
+  workflow_dispatch: {}   # run one by hand from the Actions tab
+
+# Never run two shifts at once — they would both write the same cache and
+# double the CFBD spend for no benefit. A second trigger simply waits.
+concurrency:
+  group: live-score-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # Below GitHub's 6h hard cap, so the script finishes on its own terms
+    # rather than being killed part-way through a write.
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Refresh scores while games are live
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+        run: python3 live_refresh.py
