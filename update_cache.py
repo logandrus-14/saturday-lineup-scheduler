@@ -148,6 +148,128 @@ class QuotaExhausted(Exception):
     """CFBD's monthly call allowance is spent."""
 
 
+def write_json_cache(token, doc_id, payload):
+    """One CFBD response cached as a JSON blob under cache/<doc_id>."""
+    body = {"fields": {
+        "json": {"stringValue": json.dumps(payload)},
+        "updatedAt": {"timestampValue": dt.datetime.now(dt.timezone.utc)
+                      .isoformat().replace("+00:00", "Z")},
+    }}
+    req = urllib.request.Request(
+        f"{FS}/{PARENT}/cache/{doc_id}",
+        data=json.dumps(body).encode(), method="PATCH",
+        headers={"Authorization": f"Bearer {token}",
+                 "Content-Type": "application/json"})
+    urllib.request.urlopen(req, timeout=20).read()
+
+
+# ─── Per-game reveal ─────────────────────────────────────────────────────
+#
+# Picks lock and reveal one game at a time, like a fantasy lineup. Firestore
+# rules are per-DOCUMENT, so there is no way to hand a groupmate half of
+# someone's lineup — "show my Thursday pick but not my Saturday picks"
+# cannot be expressed there.
+#
+# So the reveal is published here instead. With admin rights, this reads
+# every member's lineup, keeps only the picks whose games have already
+# kicked off, and writes one board per group per week that the group may
+# read. Lineups stay private to their owner. Clients can never write a
+# board, so nobody can reveal or fake a pick that has not started.
+#
+# It needs no CFBD data at all — every pick carries its own kickoff — which
+# is why main() writes boards BEFORE touching CFBD. A quota outage must
+# never stop picks revealing.
+
+
+def fs_get(token, path):
+    req = urllib.request.Request(f"{FS}/{PARENT}/{path}",
+                                 headers={"Authorization": f"Bearer {token}"})
+    try:
+        return json.load(urllib.request.urlopen(req, timeout=20))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
+
+
+def fs_list(token, collection):
+    docs, page = [], None
+    while True:
+        url = f"{FS}/{PARENT}/{collection}?pageSize=300"
+        if page:
+            url += f"&pageToken={page}"
+        req = urllib.request.Request(
+            url, headers={"Authorization": f"Bearer {token}"})
+        body = json.load(urllib.request.urlopen(req, timeout=20))
+        docs.extend(body.get("documents", []))
+        page = body.get("nextPageToken")
+        if not page:
+            return docs
+
+
+def started_picks(lineup_doc, now):
+    """Only the picks whose games have kicked off, as plain values."""
+    slots = (lineup_doc or {}).get("fields", {}).get(
+        "slots", {}).get("mapValue", {}).get("fields", {})
+    out = {}
+    for name, value in slots.items():
+        fields = value.get("mapValue", {}).get("fields", {})
+        stamped = fields.get("kickoffAt", {}).get("timestampValue")
+        if not stamped:
+            continue  # no kickoff recorded — stays private, the safe way
+        kickoff = dt.datetime.fromisoformat(stamped.replace("Z", "+00:00"))
+        if now < kickoff:
+            continue
+        out[name] = {
+            "gameId": fields.get("gameId", {}).get("stringValue", ""),
+            "team": fields.get("team", {}).get("stringValue", ""),
+            "kickoffAt": kickoff.isoformat().replace("+00:00", "Z"),
+        }
+    return out
+
+
+def write_boards(token, season, week):
+    now = dt.datetime.now(dt.timezone.utc)
+    lineups = {}  # uid -> doc, so someone in two groups is read once
+    written = 0
+
+    for group in fs_list(token, "groups"):
+        gid = group["name"].rsplit("/", 1)[-1]
+        members = [
+            v.get("stringValue")
+            for v in group.get("fields", {}).get("memberUids", {})
+            .get("arrayValue", {}).get("values", [])
+        ]
+
+        board = {}
+        for uid in members:
+            if not uid:
+                continue
+            if uid not in lineups:
+                lineups[uid] = fs_get(
+                    token, f"users/{uid}/lineups/{season}_{week}")
+            picks = started_picks(lineups[uid], now)
+            if picks:
+                board[uid] = picks
+
+        body = {"fields": {
+            "json": {"stringValue": json.dumps(board)},
+            "season": {"integerValue": str(season)},
+            "week": {"integerValue": str(week)},
+            "updatedAt": {"timestampValue":
+                          now.isoformat().replace("+00:00", "Z")},
+        }}
+        req = urllib.request.Request(
+            f"{FS}/{PARENT}/groups/{gid}/board/{season}_{week}",
+            data=json.dumps(body).encode(), method="PATCH",
+            headers={"Authorization": f"Bearer {token}",
+                     "Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=20).read()
+        written += 1
+
+    return written, len(lineups)
+
+
 def main():
     key = json.loads(os.environ["FIREBASE_SERVICE_ACCOUNT"])
     cfbd = os.environ["CFBD_API_KEY"]
@@ -166,6 +288,16 @@ def main():
 
     season = current_season()
     week = current_week(cfbd, season)
+
+    # Boards first, and deliberately before any CFBD call: revealing a
+    # pick needs no CFBD data, so running out of quota must never stop
+    # picks from revealing at kickoff.
+    try:
+        boards, read = write_boards(token, season, week)
+        print(f"wrote {boards} group board(s) from {read} lineup(s)")
+    except Exception as e:
+        print(f"group boards skipped: {e}")
+
     try:
         games = cfbd_get("/games", cfbd, year=season, week=week,
                          seasonType="regular", division="fbs")
@@ -190,6 +322,27 @@ def main():
         headers={"Authorization": f"Bearer {token}",
                  "Content-Type": "application/json"})
     urllib.request.urlopen(req, timeout=20).read()
+
+    # The calendar (which week is it) and the AP poll used to be called
+    # straight from every phone, on every session, which quietly made CFBD
+    # usage scale with the number of players — the thing this cache exists
+    # to prevent. Neither is worth failing the run over.
+    try:
+        write_json_cache(token, f"calendar_{season}",
+                         cfbd_get("/calendar", cfbd, year=season))
+        print(f"cached calendar_{season}")
+    except Exception as e:
+        print(f"calendar cache skipped: {e}")
+
+    try:
+        write_json_cache(
+            token, f"rankings_{season}_{week}",
+            cfbd_get("/rankings", cfbd, year=season, week=week,
+                     seasonType="regular"))
+        print(f"cached rankings_{season}_{week}")
+    except Exception as e:
+        print(f"rankings cache skipped: {e}")
+
     record_run(token)
     print(f"cached {season} week {week}: {len(games)} games, {len(lines)} lines")
 
