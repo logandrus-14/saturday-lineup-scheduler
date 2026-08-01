@@ -1,0 +1,43 @@
+# GitHub Actions workflow: shouts if the score cache goes stale.
+# Put this file at .github/workflows/cache-alarm.yml in the scheduler repo.
+#
+# Needs one repository secret, the same one the other workflows use:
+#   FIREBASE_SERVICE_ACCOUNT  — the whole firebase-key.json contents
+#
+# WHY THIS EXISTS
+# ---------------
+# In July 2026 the cache sat 9 days stale and every workflow run still
+# reported success, because the refresh scripts exit 0 on a spent CFBD
+# quota on purpose. Nothing was wrong with that choice except that the
+# failure was completely silent.
+#
+# This job FAILS when the cache is stale at a moment it shouldn't be, and a
+# failed run is the one thing GitHub emails you about without being asked.
+# So the alarm rides on notifications that already exist — no email server,
+# no push setup, no cost.
+#
+# It makes no CFBD calls, so watching never eats into the monthly quota.
+name: Score cache alarm
+
+on:
+  schedule:
+    # Through the football day, plus one quiet-week check. These will be
+    # delayed like any GitHub cron — that's fine here. Catching a dead
+    # cache within a couple of hours instead of nine days is the whole
+    # point; it doesn't need to be punctual.
+    - cron: '20 17,20,23 * * 4,5,6,0'   # Thu-Sun, during games
+    - cron: '20 16 * * 1'               # Monday, catches a quiet-week death
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check cache freshness
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: python3 cache_alarm.py
