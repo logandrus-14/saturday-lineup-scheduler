@@ -283,6 +283,98 @@ def write_boards(token, season, week):
     return written, len(lineups)
 
 
+# ─── Season standings ────────────────────────────────────────────────────
+#
+# Clients used to total the season themselves: for every week played, for
+# every member, fetch that lineup and score it. weeks × members reads per
+# view, and the Home screen did it for every group you belong to. Cheap in
+# week 1, ~180 reads per Home open by November, and it got worse every week.
+#
+# This does the arithmetic once and writes the answer, so a client reads one
+# document. Same shape as the reveal board.
+#
+# Scoring lives in scoring.py, which is a SECOND COPY of rules that also
+# exist in Dart — see the warning at the top of that file, and the parity
+# fixture that keeps the two honest.
+#
+# Deliberately NOT called from live_refresh.py's per-tick loop: totals move
+# only when a game goes final, so recomputing every 60 seconds would cost
+# members × weeks reads a minute to produce the same answer.
+
+
+def write_season_standings(token, season, through_week):
+    from scoring import build_slate, weekly_points
+
+    # One slate per week, shared across every group.
+    slates = {}
+    for week in range(1, through_week + 1):
+        doc = fs_get(token, f"cache/slate_{season}_{week}")
+        if not doc:
+            continue
+        fields = doc.get("fields", {})
+        games_raw = fields.get("gamesJson", {}).get("stringValue")
+        lines_raw = fields.get("linesJson", {}).get("stringValue")
+        if not games_raw:
+            continue
+        slates[week] = build_slate(
+            json.loads(games_raw), json.loads(lines_raw or "[]"))
+
+    if not slates:
+        return 0, 0
+
+    lineups = {}  # (uid, week) -> picks, so shared members are read once
+    written = 0
+
+    for group in fs_list(token, "groups"):
+        gid = group["name"].rsplit("/", 1)[-1]
+        members = [
+            v.get("stringValue")
+            for v in group.get("fields", {}).get("memberUids", {})
+            .get("arrayValue", {}).get("values", [])
+        ]
+
+        totals = {}
+        for uid in members:
+            if not uid:
+                continue
+            points = picks_made = 0
+            for week, games in slates.items():
+                if (uid, week) not in lineups:
+                    doc = fs_get(token, f"users/{uid}/lineups/{season}_{week}")
+                    slots = (doc or {}).get("fields", {}).get(
+                        "slots", {}).get("mapValue", {}).get("fields", {})
+                    lineups[(uid, week)] = {
+                        name: {
+                            "gameId": v.get("mapValue", {}).get("fields", {})
+                                       .get("gameId", {}).get("stringValue"),
+                            "team": v.get("mapValue", {}).get("fields", {})
+                                     .get("team", {}).get("stringValue"),
+                        }
+                        for name, v in slots.items()
+                    }
+                picks = lineups[(uid, week)]
+                points += weekly_points(picks, games)
+                picks_made += len(picks)
+            totals[uid] = {"points": points, "picksMade": picks_made}
+
+        body = {"fields": {
+            "json": {"stringValue": json.dumps(totals)},
+            "season": {"integerValue": str(season)},
+            "throughWeek": {"integerValue": str(through_week)},
+            "updatedAt": {"timestampValue": dt.datetime.now(dt.timezone.utc)
+                          .isoformat().replace("+00:00", "Z")},
+        }}
+        req = urllib.request.Request(
+            f"{FS}/{PARENT}/groups/{gid}/standings/{season}",
+            data=json.dumps(body).encode(), method="PATCH",
+            headers={"Authorization": f"Bearer {token}",
+                     "Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=20).read()
+        written += 1
+
+    return written, len(slates)
+
+
 def main():
     key = json.loads(os.environ["FIREBASE_SERVICE_ACCOUNT"])
     cfbd = os.environ["CFBD_API_KEY"]
@@ -361,6 +453,15 @@ def main():
         print(f"cached rankings_{season}_{week}")
     except Exception as e:
         print(f"rankings cache skipped: {e}")
+
+    # Season totals last: they read every member's lineup for every week
+    # played, so they are the most expensive thing here and the least
+    # urgent. Never let them sink a run that already refreshed the scores.
+    try:
+        groups, weeks = write_season_standings(token, season, week)
+        print(f"wrote {groups} season standings doc(s) over {weeks} week(s)")
+    except Exception as e:
+        print(f"season standings skipped: {e}")
 
     print(f"cached {season} week {week}: {len(games)} games, {len(lines)} lines")
 
