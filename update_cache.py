@@ -189,6 +189,12 @@ def write_json_cache(token, doc_id, payload):
 # read. Lineups stay private to their owner. Clients can never write a
 # board, so nobody can reveal or fake a pick that has not started.
 #
+# The board also carries a per-member COUNT of filled slots. The count is
+# not reveal-gated, because a number is not a pick: it lets the group see
+# who still has a lineup to finish, and lets the app show an honest "picks
+# made" before kickoff — which reading the board alone cannot, since the
+# board holds only picks whose games have started.
+#
 # It needs no CFBD data at all — every pick carries its own kickoff — which
 # is why main() writes boards BEFORE touching CFBD. A quota outage must
 # never stop picks revealing.
@@ -220,10 +226,26 @@ def fs_list(token, collection):
             return docs
 
 
+def slots_of(lineup_doc):
+    """The raw slot map off a lineup document, or {} if there isn't one."""
+    return (lineup_doc or {}).get("fields", {}).get(
+        "slots", {}).get("mapValue", {}).get("fields", {})
+
+
+def filled_count(lineup_doc):
+    """How many of the seven slots this member has filled.
+
+    A COUNT, never content — it says someone has picked five games, not
+    which five. That distinction is the whole reason it can be published:
+    it tells a group who still has a lineup to finish without revealing
+    anything a pick reveal would.
+    """
+    return len(slots_of(lineup_doc))
+
+
 def started_picks(lineup_doc, now):
     """Only the picks whose games have kicked off, as plain values."""
-    slots = (lineup_doc or {}).get("fields", {}).get(
-        "slots", {}).get("mapValue", {}).get("fields", {})
+    slots = slots_of(lineup_doc)
     out = {}
     for name, value in slots.items():
         fields = value.get("mapValue", {}).get("fields", {})
@@ -255,6 +277,7 @@ def write_boards(token, season, week):
         ]
 
         board = {}
+        counts = {}
         for uid in members:
             if not uid:
                 continue
@@ -264,9 +287,14 @@ def write_boards(token, season, week):
             picks = started_picks(lineups[uid], now)
             if picks:
                 board[uid] = picks
+            counts[uid] = filled_count(lineups[uid])
 
         body = {"fields": {
             "json": {"stringValue": json.dumps(board)},
+            # Written for EVERY member, including those with an empty
+            # lineup, so a missing uid means "not in this group that week"
+            # rather than "hasn't picked". The screens tell those apart.
+            "counts": {"stringValue": json.dumps(counts)},
             "season": {"integerValue": str(season)},
             "week": {"integerValue": str(week)},
             "updatedAt": {"timestampValue":
