@@ -39,8 +39,9 @@ import urllib.request
 
 from update_cache import (  # noqa: E402
     FS, PARENT, QuotaExhausted, access_token, cfbd_get, current_season,
-    current_week, fs_get, record_run, write_boards,
+    current_week, fs_get, record_run, send_notifications, write_boards,
 )
+from scoring import build_slate  # noqa: E402
 
 # Stop before GitHub's 6h job limit so the shift ends cleanly rather than
 # being killed mid-write.
@@ -157,6 +158,18 @@ def main():
             write_boards(token, season, week)
         except Exception as e:
             print(f"  boards skipped: {e}")
+
+        # Notifications every tick too, so "your game is final" lands within
+        # a minute of the whistle instead of whenever the next scheduled run
+        # happens to fire. Every send is de-duped by event, which is what
+        # makes it safe to call this ~300 times a shift.
+        try:
+            n = send_notifications(token, season, week,
+                                   build_slate(games, lines))
+            if n:
+                print(f"  sent {n} notification(s)")
+        except Exception as e:
+            print(f"  notifications skipped: {e}")
 
         delay = next_delay(games, now)
         live = sum(1 for g in games if status_of(g) == "live")

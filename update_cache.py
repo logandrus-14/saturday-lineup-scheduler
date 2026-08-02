@@ -33,12 +33,21 @@ def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
 
+# Firestore to read and write, plus messaging to send a notification.
+# Both on one token because the alternative is minting two and keeping
+# them in step; nothing here needs the narrower one on its own.
+SCOPES = " ".join([
+    "https://www.googleapis.com/auth/datastore",
+    "https://www.googleapis.com/auth/firebase.messaging",
+])
+
+
 def access_token(key: dict) -> str:
     now = int(dt.datetime.now().timestamp())
     header = _b64url(json.dumps({"alg": "RS256", "typ": "JWT"}).encode())
     payload = _b64url(json.dumps({
         "iss": key["client_email"],
-        "scope": "https://www.googleapis.com/auth/datastore",
+        "scope": SCOPES,
         "aud": key["token_uri"],
         "iat": now,
         "exp": now + 3600,
@@ -311,6 +320,220 @@ def write_boards(token, season, week):
     return written, len(lineups)
 
 
+# ─── Notifications ───────────────────────────────────────────────────────
+#
+# Sent from here rather than a Cloud Function: this already runs every 60s
+# during games, already holds admin credentials, and already knows kickoffs
+# and finals. See notify.py for the reasoning and the de-dupe scheme.
+#
+# The rule every send obeys: this loop runs ~300 times a shift, so anything
+# phrased as "send while X is true" sends 300 times. Each notification is
+# recorded under a key naming the EVENT, and the record is checked first.
+
+
+def _fs_patch(token, path, fields):
+    req = urllib.request.Request(
+        f"{FS}/{PARENT}/{path}",
+        data=json.dumps({"fields": fields}).encode(), method="PATCH",
+        headers={"Authorization": f"Bearer {token}",
+                 "Content-Type": "application/json"})
+    urllib.request.urlopen(req, timeout=20).read()
+
+
+def notify_finals(token, project, season, week, slate):
+    """"Your pick is final" — once per person per game, ever.
+
+    [slate] is build_slate output, NOT raw CFBD games: it carries the
+    spread, and without the spread there is no telling whether the pick
+    covered. Saying "final" when you mean "you won" is the sort of thing
+    that gets a notification muted forever.
+
+    Fires off the board rather than off lineups, so it can only ever
+    mention a pick that has already been revealed to the group. A
+    notification is a side channel; it must not say anything the app
+    itself would not show you yet.
+    """
+    import notify
+
+    final_ids = {g["id"] for g in slate if g["status"] == "final"}
+    if not final_ids:
+        return 0
+
+    by_id = {g["id"]: g for g in slate}
+    sent = 0
+
+    for group in fs_list(token, "groups"):
+        gid = group["name"].rsplit("/", 1)[-1]
+        doc = fs_get(token, f"groups/{gid}/board/{season}_{week}")
+        raw = (doc or {}).get("fields", {}).get("json", {}).get("stringValue")
+        if not raw:
+            continue
+
+        for uid, picks in json.loads(raw).items():
+            for slot, pick in picks.items():
+                gid_ = str(pick.get("gameId"))
+                if gid_ not in final_ids:
+                    continue
+
+                key = notify.dedupe_key("final", uid, gid_)
+                if notify.already_sent(
+                        lambda p: fs_get(token, p), key):
+                    continue
+
+                from scoring import did_cover
+                game = by_id[gid_]
+                team = pick.get("team", "your pick")
+                covered = did_cover(game, team)
+                title = "Final" if covered is None else (
+                    f"{team} covered ✅" if covered else f"{team} missed ❌")
+                body = (f"{game['awayTeam']} {game['awayScore']} — "
+                        f"{game['homeTeam']} {game['homeScore']}")
+
+                for dev, _ in notify.devices_for(
+                        lambda p: fs_list(token, p), uid):
+                    notify.send_to_token(token, project, dev, title, body,
+                                         route="/gameday")
+                notify.record_sent(
+                    lambda p, f: _fs_patch(token, p, f), key, "final", uid)
+                sent += 1
+    return sent
+
+
+def notify_lineup_reminders(token, project, season, week, slate, now):
+    """"Your lineup isn't finished" — once per person per week.
+
+    Only in the last few hours before the week's first kickoff. Earlier is
+    nagging; afterwards it is pointless, because the games they still have
+    to fill are the ones already under way.
+    """
+    import notify
+
+    kickoffs = [g["startDate"] for g in slate if g.get("startDate")]
+    if not kickoffs:
+        return 0
+    first = dt.datetime.fromisoformat(min(kickoffs).replace("Z", "+00:00"))
+    hours_out = (first - now).total_seconds() / 3600
+    if not (0 < hours_out <= REMINDER_HOURS):
+        return 0
+
+    sent = 0
+    reminded = set()
+    for group in fs_list(token, "groups"):
+        gid = group["name"].rsplit("/", 1)[-1]
+        doc = fs_get(token, f"groups/{gid}/board/{season}_{week}")
+        raw = (doc or {}).get("fields", {}).get("counts", {}) \
+                         .get("stringValue")
+        if not raw:
+            continue
+
+        for uid, made in json.loads(raw).items():
+            if made >= 7 or uid in reminded:
+                continue
+            reminded.add(uid)
+
+            key = notify.dedupe_key("reminder", uid, f"{season}_{week}")
+            if notify.already_sent(lambda p: fs_get(token, p), key):
+                continue
+
+            left = 7 - int(made)
+            body = (f"{left} slot{'s' if left != 1 else ''} still empty, and "
+                    f"the first game kicks off soon.")
+            for dev, _ in notify.devices_for(
+                    lambda p: fs_list(token, p), uid):
+                notify.send_to_token(token, project, dev,
+                                     "Finish your lineup", body,
+                                     route="/lineup")
+            notify.record_sent(
+                lambda p, f: _fs_patch(token, p, f), key, "reminder", uid)
+            sent += 1
+    return sent
+
+
+# How long before the week's first kickoff a "finish your lineup" nudge is
+# still useful rather than nagging.
+REMINDER_HOURS = 6
+
+
+def _ranks(totals):
+    """uid -> standings position, ties sharing a place.
+
+    COMPETITION ranking (1, 1, 3 — not 1, 1, 2), matching `rankAt` in
+    lib/core/utils/ranking.dart. This has to agree with the app exactly:
+    a notification saying "now 2nd" against a screen saying "3rd" is worse
+    than sending nothing at all.
+
+    Ties matter for a second reason here — two people level on points have
+    not overtaken each other, so neither should be told they moved.
+    """
+    return {
+        uid: 1 + sum(1 for other in totals.values()
+                     if other["points"] > t["points"])
+        for uid, t in totals.items()
+    }
+
+
+def notify_rank_changes(token, project, season, week, gid, old, new,
+                        group_name):
+    """"You moved in the standings" — once per person per group per week.
+
+    Only sent to people who CHANGED POSITION. Points moving is not news;
+    everyone's points move every Saturday. Overtaking somebody is.
+    """
+    import notify
+
+    shared = set(old) & set(new)
+    if len(shared) < 2:
+        return 0                      # a group of one has no standings
+
+    before = _ranks({u: old[u] for u in shared})
+    after = _ranks({u: new[u] for u in shared})
+
+    sent = 0
+    for uid in shared:
+        moved = before[uid] - after[uid]      # positive = moved up
+        if moved == 0:
+            continue
+
+        # Keyed on the week, not the position, so the same week's shuffling
+        # can't notify somebody twice as later games land.
+        key = notify.dedupe_key("rank", uid, f"{gid}_{season}_{week}")
+        if notify.already_sent(lambda p: fs_get(token, p), key):
+            continue
+
+        title = ("You moved up 📈" if moved > 0 else "You slipped 📉")
+        body = (f"{abs(moved)} place{'s' if abs(moved) != 1 else ''} "
+                f"{'up' if moved > 0 else 'down'} in {group_name} — "
+                f"now {after[uid]} of {len(shared)}.")
+        for dev, _ in notify.devices_for(lambda p: fs_list(token, p), uid):
+            notify.send_to_token(token, project, dev, title, body,
+                                 route="/leaderboard")
+        notify.record_sent(
+            lambda p, f: _fs_patch(token, p, f), key, "rank", uid)
+        sent += 1
+    return sent
+
+
+def send_notifications(token, season, week, slate):
+    """Every notification for this tick. Never raises.
+
+    Wrapped whole, because notifications are the least important thing this
+    job does. Scores being fresh is what people actually depend on; a
+    failed send must not cost them that.
+    """
+    total = 0
+    now = dt.datetime.now(dt.timezone.utc)
+    for label, fn in (
+        ("finals", lambda: notify_finals(token, PROJECT, season, week, slate)),
+        ("reminders", lambda: notify_lineup_reminders(
+            token, PROJECT, season, week, slate, now)),
+    ):
+        try:
+            total += fn()
+        except Exception as e:
+            print(f"  {label} notifications skipped: {e}")
+    return total
+
+
 # ─── Season standings ────────────────────────────────────────────────────
 #
 # Clients used to total the season themselves: for every week played, for
@@ -384,6 +607,22 @@ def write_season_standings(token, season, through_week):
                 points += weekly_points(picks, games)
                 picks_made += len(picks)
             totals[uid] = {"points": points, "picksMade": picks_made}
+
+        # Read the standings we're about to replace, so we can tell who
+        # actually moved. Done before the write, obviously, and treated as
+        # optional — never let a notification stop the standings updating.
+        try:
+            previous = fs_get(token, f"groups/{gid}/standings/{season}")
+            old_raw = (previous or {}).get("fields", {}) \
+                .get("json", {}).get("stringValue")
+            if old_raw:
+                notify_rank_changes(
+                    token, PROJECT, season, through_week, gid,
+                    json.loads(old_raw), totals,
+                    (group.get("fields", {}).get("name", {})
+                     .get("stringValue") or "your group"))
+        except Exception as e:
+            print(f"  rank notifications skipped: {e}")
 
         body = {"fields": {
             "json": {"stringValue": json.dumps(totals)},
@@ -481,6 +720,16 @@ def main():
         print(f"cached rankings_{season}_{week}")
     except Exception as e:
         print(f"rankings cache skipped: {e}")
+
+    # Notifications before the expensive season totals, so a slow or
+    # failing standings pass can't delay a "your game is final" by an hour.
+    try:
+        n = send_notifications(token, season, week,
+                               build_slate(games, lines))
+        if n:
+            print(f"sent {n} notification(s)")
+    except Exception as e:
+        print(f"notifications skipped: {e}")
 
     # Season totals last: they read every member's lineup for every week
     # played, so they are the most expensive thing here and the least
