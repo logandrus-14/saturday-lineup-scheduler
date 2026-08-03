@@ -123,23 +123,86 @@ MAX_AGE_BY_WEEKDAY = {
     2: 60,   # Wednesday
 }
 
+# ...but the weekday only matters once there is football. Between seasons,
+# and in the weeks before kickoff, a Saturday is just a Saturday: nothing
+# is being played, so nothing can change, and refreshing every five minutes
+# spends the monthly allowance on data that is already correct.
+#
+# This bit us for real. In the two days after the August 2026 rollover the
+# app burned ~29,500 of 30,000 calls with the season 26 days away, and the
+# quota does not reset until September — after opening weekend.
+QUIET_MAX_AGE = 12 * 60          # refresh twice a day when nothing is close
+QUIET_IF_KICKOFF_BEYOND = 24     # hours
+
 STATE_DOC = "scheduler_state"
 
 
-def minutes_since_last_run(token: str):
-    """None when we've never run (or the marker is unreadable)."""
+def read_state(token: str):
+    """(minutes since last run, hours until the next kickoff).
+
+    Both may be None. Costs ONE Firestore read and no CFBD calls, which is
+    the point — the throttle has to be cheaper than the thing it guards, or
+    it would be spending calls to decide whether to spend calls.
+
+    `nextKickoffAt` is written by the run that last fetched a slate, so the
+    throttle knows how close football is without asking CFBD.
+    """
     req = urllib.request.Request(
         f"{FS}/{PARENT}/cache/{STATE_DOC}",
         headers={"Authorization": f"Bearer {token}"})
     try:
         doc = json.loads(urllib.request.urlopen(req, timeout=20).read())
     except Exception:
-        return None
-    stamp = doc.get("fields", {}).get("lastRun", {}).get("timestampValue")
-    if not stamp:
-        return None
-    last = dt.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-    return (dt.datetime.now(dt.timezone.utc) - last).total_seconds() / 60
+        return None, None
+
+    fields = doc.get("fields", {})
+    now = dt.datetime.now(dt.timezone.utc)
+
+    mins = None
+    stamp = fields.get("lastRun", {}).get("timestampValue")
+    if stamp:
+        last = dt.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        mins = (now - last).total_seconds() / 60
+
+    hours = None
+    kick = fields.get("nextKickoffAt", {}).get("timestampValue")
+    if kick:
+        k = dt.datetime.fromisoformat(kick.replace("Z", "+00:00"))
+        hours = (k - now).total_seconds() / 3600
+
+    return mins, hours
+
+
+def minutes_since_last_run(token: str):
+    """Back-compat shim — live_refresh imports this."""
+    return read_state(token)[0]
+
+
+def record_next_kickoff(token: str, games) -> None:
+    """Remember when football next happens, so the throttle can be lazy.
+
+    Cheap, and it is what lets a run in the off-season skip CFBD entirely
+    rather than spending three calls to rediscover that the season has not
+    started.
+    """
+    now = dt.datetime.now(dt.timezone.utc)
+    upcoming = []
+    for g in games or []:
+        raw = g.get("startDate")
+        if not raw:
+            continue
+        try:
+            start = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if start > now:
+            upcoming.append(start)
+    if not upcoming:
+        return
+    _fs_patch(token, f"cache/{STATE_DOC}", {
+        "nextKickoffAt": {"timestampValue":
+                          min(upcoming).isoformat().replace("+00:00", "Z")},
+    })
 
 
 def record_run(token: str) -> None:
@@ -650,12 +713,23 @@ def main():
     # Bail out before spending a single CFBD call if the cache is already
     # fresh enough for what day it is. FORCE_REFRESH=1 overrides, so a
     # manual run from the Actions tab always does something.
-    max_age = MAX_AGE_BY_WEEKDAY[dt.datetime.now(dt.timezone.utc).weekday()]
-    age = minutes_since_last_run(token)
+    age, kickoff_in = read_state(token)
+
+    # How close is football? Between seasons the weekday means nothing —
+    # a Saturday in July is not a game day, and refreshing every 5 minutes
+    # for games three weeks out is how the August quota disappeared.
+    if kickoff_in is not None and kickoff_in > QUIET_IF_KICKOFF_BEYOND:
+        max_age = QUIET_MAX_AGE
+        why = f"next kickoff is {kickoff_in / 24:.1f} days away"
+    else:
+        weekday = dt.datetime.now(dt.timezone.utc).weekday()
+        max_age = MAX_AGE_BY_WEEKDAY[weekday]
+        why = "football is close"
+
     if (os.environ.get("FORCE_REFRESH") != "1"
             and age is not None and age < max_age):
-        print(f"cache refreshed {age:.1f} min ago; "
-              f"threshold today is {max_age} min — skipping, no CFBD calls")
+        print(f"cache refreshed {age:.1f} min ago; threshold is "
+              f"{max_age} min ({why}) — skipping, no CFBD calls")
         return
 
     # Claim the slot before spending ANYTHING. current_week hits /calendar,
@@ -685,6 +759,13 @@ def main():
         if e.code == 429:
             raise QuotaExhausted() from e
         raise
+
+    # Tell the next run how close football is, so it can skip CFBD entirely
+    # when the answer is "weeks away". Costs one Firestore write.
+    try:
+        record_next_kickoff(token, games)
+    except Exception as e:
+        print(f"  next-kickoff marker skipped: {e}")
 
     body = {"fields": {
         "gamesJson": {"stringValue": json.dumps(games)},
