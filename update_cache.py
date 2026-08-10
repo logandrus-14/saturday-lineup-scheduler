@@ -576,6 +576,58 @@ def notify_rank_changes(token, project, season, week, gid, old, new,
     return sent
 
 
+def deliver_nudges(token, project, season, week):
+    """Send the reminders a COMMISSIONER asked for.
+
+    The app cannot send a push itself -- that needs a server key, and a key
+    inside an app binary is a key anybody can extract. So a commissioner's
+    tap writes groups/{gid}/nudges/{season}_{week}, and this delivers it on
+    the next run: inside a minute during a live shift, longer on a quiet
+    weekday, which is why the button promises "shortly" and not "now".
+
+    `sentAt` on the request is the de-dupe, in the same spirit as the rest
+    of this file -- the marker names the EVENT, not the moment. The security
+    rules let a client CREATE that document and never update or delete it,
+    so a nudge cannot be replayed by anybody but this function.
+    """
+    sent = 0
+    for group in fs_list(token, "groups"):
+        gid = group["name"].rsplit("/", 1)[-1]
+        doc = fs_get(token, f"groups/{gid}/nudges/{season}_{week}")
+        if doc is None:
+            continue
+        fields = doc.get("fields", {})
+        # Checked every run, and this loop runs every 60 seconds during a
+        # shift -- without it one nudge would be re-sent three hundred times.
+        if fields.get("sentAt", {}).get("timestampValue"):
+            continue
+
+        uids = [v.get("stringValue") for v in
+                fields.get("uids", {}).get("arrayValue", {}).get("values", [])]
+        name = group.get("fields", {}).get("name", {}) \
+                    .get("stringValue", "your group")
+
+        for uid in uids:
+            if not uid:
+                continue
+            for dev, _ in notify.devices_for(lambda p: fs_list(token, p), uid):
+                notify.send_to_token(
+                    token, project, dev,
+                    "Your lineup isn't finished",
+                    f"The commissioner of {name} is waiting on your picks.",
+                    route="/lineup")
+            sent += 1
+
+        # Stamped even when nobody was reachable. The request HAS been
+        # handled, and leaving it pending would retry the same empty send on
+        # every tick for the rest of the week.
+        _fs_patch(token, f"groups/{gid}/nudges/{season}_{week}", {
+            "sentAt": {"timestampValue": dt.datetime.now(dt.timezone.utc)
+                       .isoformat().replace("+00:00", "Z")},
+        })
+    return sent
+
+
 def send_notifications(token, season, week, slate):
     """Every notification for this tick. Never raises.
 
@@ -589,6 +641,7 @@ def send_notifications(token, season, week, slate):
         ("finals", lambda: notify_finals(token, PROJECT, season, week, slate)),
         ("reminders", lambda: notify_lineup_reminders(
             token, PROJECT, season, week, slate, now)),
+        ("nudges", lambda: deliver_nudges(token, PROJECT, season, week)),
     ):
         try:
             total += fn()
