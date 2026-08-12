@@ -642,6 +642,10 @@ def send_notifications(token, season, week, slate):
         ("reminders", lambda: notify_lineup_reminders(
             token, PROJECT, season, week, slate, now)),
         ("nudges", lambda: deliver_nudges(token, PROJECT, season, week)),
+        # Last, and inside the same wrapper: a lock-screen decoration must
+        # never be able to cost the scores their refresh.
+        ("live activities", lambda: push_live_activities(
+            token, season, week, slate, now)),
     ):
         try:
             total += fn()
@@ -667,6 +671,161 @@ def send_notifications(token, season, week, slate):
 # Deliberately NOT called from live_refresh.py's per-tick loop: totals move
 # only when a game goes final, so recomputing every 60 seconds would cost
 # members × weeks reads a minute to produce the same answer.
+
+
+def fs_query_group(token, collection_id):
+    """Every document in a collection, wherever it sits under a user.
+
+    One request instead of a document read per user per tick. Finding the
+    handful of live activity tokens the naive way would be ~9,000 reads
+    across a 5.5 hour Saturday at 28 users.
+    """
+    body = {"structuredQuery": {
+        "from": [{"collectionId": collection_id, "allDescendants": True}]}}
+    req = urllib.request.Request(
+        f"{FS}/{PARENT}:runQuery", data=json.dumps(body).encode(),
+        method="POST",
+        headers={"Authorization": f"Bearer {token}",
+                 "Content-Type": "application/json"})
+    rows = json.load(urllib.request.urlopen(req, timeout=20))
+    return [r["document"] for r in rows if "document" in r]
+
+
+def fs_delete(token, path):
+    req = urllib.request.Request(
+        f"{FS}/{PARENT}/{path}", method="DELETE",
+        headers={"Authorization": f"Bearer {token}"})
+    try:
+        urllib.request.urlopen(req, timeout=20)
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            raise
+
+
+def push_live_activities(token, season, week, slate, now):
+    """Drive everyone's lock-screen card. Returns how many were pushed.
+
+    THIS IS WHAT MAKES THE FEATURE WORTH HAVING. Without it a Live Activity
+    only moves while the app is open, which is exactly when nobody needs
+    one — the whole value is a lock screen that keeps up while the game is
+    on television and the phone is face down.
+
+    Reads LINEUPS rather than the group board, which is the opposite of
+    every other notification here and is correct: a card is only ever shown
+    to its own owner, so there is nothing to reveal. The board deliberately
+    withholds picks that have not kicked off, and a score built from it
+    would be missing the very games still to come.
+
+    Never raises. A lock-screen decoration must not be able to cost the
+    scores their refresh — the same wrapper the other notifications get.
+    """
+    import live_activity
+    from scoring import SLOT_POINTS, did_cover
+
+    p8 = os.environ.get("APNS_KEY_P8", "").replace("\\n", "\n").strip()
+    if not p8:
+        return 0  # not configured yet — see HANDOFF.md
+
+    try:
+        rows = fs_query_group(token, "liveActivities")
+    except Exception as e:
+        print(f"live activities: could not list tokens ({e})")
+        return 0
+
+    by_id = {g["id"]: g for g in slate}
+    pushed = 0
+
+    for doc in rows:
+        try:
+            fields = doc.get("fields", {})
+            if int(fields.get("season", {}).get("integerValue", 0)) != season:
+                continue
+            if int(fields.get("week", {}).get("integerValue", 0)) != week:
+                continue
+            device = fields.get("token", {}).get("stringValue")
+            if not device:
+                continue
+
+            # .../documents/users/{uid}/liveActivities/{weekId}
+            parts = doc["name"].split("/")
+            uid = parts[parts.index("users") + 1]
+
+            slots = slots_of(fs_get(token, f"users/{uid}/lineups/{season}_{week}"))
+            if not slots:
+                continue
+
+            won = lost = playing = to_come = 0
+            for slot, value in slots.items():
+                points = SLOT_POINTS.get(slot)
+                f = value.get("mapValue", {}).get("fields", {})
+                game = by_id.get(f.get("gameId", {}).get("stringValue", ""))
+                if points is None or game is None:
+                    continue
+                if game["status"] == "final":
+                    if did_cover(game, f.get("team", {}).get("stringValue")):
+                        won += points
+                    else:
+                        # A push is not points in hand either, and counting
+                        # it as lost is how the app's own tally reads.
+                        lost += points
+                elif game["status"] == "in_progress":
+                    playing += 1
+                else:
+                    to_come += 1
+
+            rank, size = _season_placing(token, season, uid)
+            state = live_activity.build_content_state(
+                won_points=won, lost_points=lost,
+                picks_playing=playing, picks_to_come=to_come,
+                # The scheduler cannot know the reader's chosen style, and
+                # the app redraws the card whenever it is open. Plus/minus
+                # is the default and the shape the card was designed for.
+                style="plusMinus",
+                rank=rank, group_size=size, now=now,
+            )
+
+            status, body = live_activity.send_update(device, state, p8)
+            if live_activity.is_dead_token(status, body):
+                # Swiped away, or the week ended. Retrying forever against a
+                # dead address wastes an afternoon of pushes on nobody.
+                fs_delete(token, f"users/{uid}/liveActivities/{season}_{week}")
+            elif status == 200:
+                pushed += 1
+            else:
+                print(f"live activity {uid}: {status} {body[:120]}")
+        except Exception as e:
+            print(f"live activity skipped for one user: {e}")
+
+    return pushed
+
+
+def _season_placing(token, season, uid):
+    """(rank, group size) from the published standings, or (None, None).
+
+    Best-ranked group, matching what the app puts on the card. Cheap: these
+    are documents the scheduler itself wrote.
+    """
+    best = None
+    for group in fs_list(token, "groups"):
+        gid = group["name"].rsplit("/", 1)[-1]
+        doc = fs_get(token, f"groups/{gid}/standings/{season}")
+        raw = (doc or {}).get("fields", {}).get("json", {}).get("stringValue")
+        if not raw:
+            continue
+        try:
+            rows = json.loads(raw)
+        except ValueError:
+            continue
+        totals = [r.get("points", 0) for r in rows]
+        for i, row in enumerate(rows):
+            if row.get("uid") != uid:
+                continue
+            # Tie-aware, like ranksFor in Dart: level on points means level
+            # in the standings, not ordered by whoever loaded first.
+            rank = sum(1 for t in totals if t > totals[i]) + 1
+            if best is None or rank < best[0]:
+                best = (rank, len(rows))
+    return best if best else (None, None)
 
 
 def write_season_standings(token, season, through_week):

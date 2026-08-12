@@ -4,6 +4,9 @@
 # Uses the same two repository secrets as update-cache.yml:
 #   FIREBASE_SERVICE_ACCOUNT  — the whole firebase-key.json contents
 #   CFBD_API_KEY              — your CollegeFootballData API key
+#   APNS_KEY_P8               — the .p8 Live Activity push key (optional;
+#                               without it the lock-screen cards simply
+#                               do not update, and nothing else changes)
 #
 # WHY THIS EXISTS
 # ---------------
@@ -52,4 +55,5 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+          APNS_KEY_P8: ${{ secrets.APNS_KEY_P8 }}
         run: python3 live_refresh.py
