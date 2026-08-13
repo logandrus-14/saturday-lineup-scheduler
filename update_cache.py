@@ -773,7 +773,11 @@ def push_live_activities(token, season, week, slate, now):
                 else:
                     to_come += 1
 
-            rank, size = _season_placing(token, season, uid)
+            # The group the app pinned onto this card. Read from the same doc
+            # as the token so the two can never disagree about which card is
+            # which.
+            group_id = fields.get("groupId", {}).get("stringValue")
+            rank, size = _season_placing(token, season, uid, group_id)
             state = live_activity.build_content_state(
                 won_points=won, lost_points=lost,
                 picks_playing=playing, picks_to_come=to_come,
@@ -799,33 +803,47 @@ def push_live_activities(token, season, week, slate, now):
     return pushed
 
 
-def _season_placing(token, season, uid):
+def _season_placing(token, season, uid, group_id=None):
     """(rank, group size) from the published standings, or (None, None).
 
-    Best-ranked group, matching what the app puts on the card. Cheap: these
-    are documents the scheduler itself wrote.
+    ALWAYS the group the app pinned when it started the card — never
+    "whichever one they lead right now". A Live Activity's name is fixed for
+    the card's entire life (ActivityKit attributes cannot be updated) while
+    this rank is pushed afresh every minute, so picking the best-ranked group
+    here would put "Andrus Crew" beside a rank in SF Substation half way
+    through an afternoon. One lineup is shared across every group, so the
+    points are identical everywhere and it is OTHER people's scores that
+    reorder them: that drift is ordinary, not a corner case.
+
+    pinnedOrBest on the Dart side is the other half of this agreement. If you
+    change how a group is chosen, change it in both languages — the card is
+    assembled from both and neither can see the other.
+
+    No recorded group means NO placing. A gap is honest; a rank belonging to
+    a league the card is not naming is not.
+
+    Cheap: this is one document, written by the scheduler itself.
     """
-    best = None
-    for group in fs_list(token, "groups"):
-        gid = group["name"].rsplit("/", 1)[-1]
-        doc = fs_get(token, f"groups/{gid}/standings/{season}")
-        raw = (doc or {}).get("fields", {}).get("json", {}).get("stringValue")
-        if not raw:
+    if not group_id:
+        return (None, None)
+
+    doc = fs_get(token, f"groups/{group_id}/standings/{season}")
+    raw = (doc or {}).get("fields", {}).get("json", {}).get("stringValue")
+    if not raw:
+        return (None, None)
+    try:
+        rows = json.loads(raw)
+    except ValueError:
+        return (None, None)
+
+    totals = [r.get("points", 0) for r in rows]
+    for i, row in enumerate(rows):
+        if row.get("uid") != uid:
             continue
-        try:
-            rows = json.loads(raw)
-        except ValueError:
-            continue
-        totals = [r.get("points", 0) for r in rows]
-        for i, row in enumerate(rows):
-            if row.get("uid") != uid:
-                continue
-            # Tie-aware, like ranksFor in Dart: level on points means level
-            # in the standings, not ordered by whoever loaded first.
-            rank = sum(1 for t in totals if t > totals[i]) + 1
-            if best is None or rank < best[0]:
-                best = (rank, len(rows))
-    return best if best else (None, None)
+        # Tie-aware, like ranksFor in Dart: level on points means level in the
+        # standings, not ordered by whoever loaded first.
+        return (sum(1 for t in totals if t > totals[i]) + 1, len(rows))
+    return (None, None)
 
 
 def write_season_standings(token, season, through_week):
