@@ -512,6 +512,110 @@ def notify_lineup_reminders(token, project, season, week, slate, now):
     return sent
 
 
+def notify_last_chance(token, project, season, week, slate, now):
+    """"Your first pick locks in 25 minutes" — once per person per week.
+
+    The highest-intent notification this app can send. The existing reminder
+    only fires for UNFINISHED lineups, so somebody who filled all seven days
+    ago hears nothing at all — yet the last half hour before their earliest
+    pick freezes is exactly when a person wants to change their mind, and
+    after it they cannot.
+
+    Their deadline is the earliest kickoff among their OWN picks, not the
+    slate's first game. Since locking went per-game those are frequently
+    different, and a Thursday night game somebody did not pick takes nothing
+    away from them. This is `nextPickLockAt` in lib/features/home/domain/
+    next_lock.dart, in Python — if you change how that moment is chosen,
+    change it here too.
+
+    DEDUPED BY EVENT KEY, per person per week. The live loop runs ~300 times
+    a shift, so anything phrased as "send while X is true" sends 300 times.
+    """
+    import notify
+
+    # Cheap gate first. A person's first lock is always AT some game's
+    # kickoff, so if nothing on the slate starts inside the window then
+    # nobody's window is open and there is no reason to read any lineups.
+    window = dt.timedelta(minutes=LAST_CHANCE_MINUTES)
+    starting_soon = False
+    for game in slate:
+        raw = game.get("startDate")
+        if not raw:
+            continue
+        start = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if now < start <= now + window:
+            starting_soon = True
+            break
+    if not starting_soon:
+        return 0
+
+    sent = 0
+    seen = set()
+    for group in fs_list(token, "groups"):
+        gid = group["name"].rsplit("/", 1)[-1]
+        doc = fs_get(token, f"groups/{gid}/board/{season}_{week}")
+        raw = (doc or {}).get("fields", {}).get("counts", {}) \
+                         .get("stringValue")
+        if not raw:
+            continue
+
+        for uid in json.loads(raw):
+            if uid in seen:
+                continue
+            seen.add(uid)
+
+            key = notify.dedupe_key("lastchance", uid, f"{season}_{week}")
+            if notify.already_sent(lambda p: fs_get(token, p), key):
+                continue
+
+            lock_at = _first_pick_lock(
+                slots_of(fs_get(token, f"users/{uid}/lineups/{season}_{week}")),
+                now,
+            )
+            if lock_at is None or not (now < lock_at <= now + window):
+                continue
+
+            minutes = max(1, int((lock_at - now).total_seconds() // 60))
+            body = (f"Your first pick locks in {minutes} "
+                    f"minute{'s' if minutes != 1 else ''}. Last chance to "
+                    f"change it.")
+            for dev, _ in notify.devices_for(
+                    lambda p: fs_list(token, p), uid):
+                notify.send_to_token(token, project, dev,
+                                     "Last chance", body, route="/lineup")
+            notify.record_sent(
+                lambda p, f: _fs_patch(token, p, f), key, "lastchance", uid)
+            sent += 1
+    return sent
+
+
+def _first_pick_lock(slots, now):
+    """Earliest kickoff among picks that have not started, or None.
+
+    Mirrors nextPickLockAt in Dart. A slot with no recorded kickoff is
+    skipped rather than guessed at — backfill_kickoffs.py exists for those,
+    and inventing a deadline is worse than staying quiet about one.
+    """
+    soonest = None
+    for value in (slots or {}).values():
+        fields = value.get("mapValue", {}).get("fields", {})
+        raw = fields.get("kickoffAt", {}).get("timestampValue")
+        if not raw:
+            continue
+        kickoff = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if kickoff <= now:
+            continue
+        if soonest is None or kickoff < soonest:
+            soonest = kickoff
+    return soonest
+
+
+# How close to somebody's OWN first kickoff the last-chance nudge fires.
+# Short on purpose: it exists to catch a change of mind, and a warning two
+# hours out is just another reminder.
+LAST_CHANCE_MINUTES = 30
+
+
 # How long before the week's first kickoff a "finish your lineup" nudge is
 # still useful rather than nagging.
 REMINDER_HOURS = 6
@@ -640,6 +744,8 @@ def send_notifications(token, season, week, slate):
     for label, fn in (
         ("finals", lambda: notify_finals(token, PROJECT, season, week, slate)),
         ("reminders", lambda: notify_lineup_reminders(
+            token, PROJECT, season, week, slate, now)),
+        ("last chance", lambda: notify_last_chance(
             token, PROJECT, season, week, slate, now)),
         ("nudges", lambda: deliver_nudges(token, PROJECT, season, week)),
         # Last, and inside the same wrapper: a lock-screen decoration must
