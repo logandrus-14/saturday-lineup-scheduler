@@ -610,6 +610,140 @@ def _first_pick_lock(slots, now):
     return soonest
 
 
+def notify_reactions(token, project, season, week, now):
+    """"Eric reacted to your picks" — batched, and deliberately vague.
+
+    **It never says WHAT was said.** That is the point, not an oversight: the
+    whole value of the reaction is being talked about, and a notification that
+    quotes the joke is a notification nobody needs to act on. Withholding it
+    turns the message into a reason to open the app, which is the only place
+    the jokes live.
+
+    **Batched per person, not per tap.** Seven picks times three groupmates is
+    potentially twenty-one notifications about jokes on one Saturday, which is
+    how an app gets muted. One message per person per REACTION_BATCH_MINUTES,
+    naming who reacted and nothing else.
+
+    **Only NEW reactors count.** Everything already announced is remembered in
+    groups/{gid}/reactionNotify/{season}_{week}, so a reaction that has been
+    reported once never counts again — including one that is taken back and
+    put on a second time.
+    """
+    import notify
+
+    sent = 0
+    for group in fs_list(token, "groups"):
+        gid = group["name"].rsplit("/", 1)[-1]
+        doc = fs_get(token, f"groups/{gid}/reactions/{season}_{week}")
+        if not doc:
+            continue
+
+        # targetUid -> set of "reactor|gameId" currently on their picks.
+        current = {}
+        for key, value in (doc.get("fields") or {}).items():
+            if "_" not in key:
+                continue
+            target_uid, _, game_id = key.partition("_")
+            for reactor in (value.get("mapValue", {})
+                                 .get("fields", {}) or {}):
+                if reactor == target_uid:
+                    continue  # cannot happen through the app; belt and braces
+                current.setdefault(target_uid, set()).add(f"{reactor}|{game_id}")
+        if not current:
+            continue
+
+        state_path = f"groups/{gid}/reactionNotify/{season}_{week}"
+        state = (fs_get(token, state_path) or {}).get("fields", {})
+
+        updates = {}
+        for target_uid, seen_now in current.items():
+            prior = state.get(target_uid, {}).get("mapValue", {}) \
+                         .get("fields", {})
+            announced = {
+                v.get("stringValue")
+                for v in (prior.get("announced", {}).get("arrayValue", {})
+                               .get("values") or [])
+            }
+            fresh = seen_now - announced
+            if not fresh:
+                continue
+
+            # Hold off until the batch window has passed, so a flurry during
+            # one game becomes one message rather than five.
+            last_raw = prior.get("lastSentAt", {}).get("timestampValue")
+            if last_raw:
+                last = dt.datetime.fromisoformat(last_raw.replace("Z", "+00:00"))
+                if (now - last).total_seconds() < REACTION_BATCH_MINUTES * 60:
+                    continue
+
+            reactors = sorted({item.split("|")[0] for item in fresh})
+            body = _reaction_body(token, reactors)
+            for dev, _ in notify.devices_for(
+                    lambda p: fs_list(token, p), target_uid):
+                notify.send_to_token(token, project, dev,
+                                     "Someone's talking", body,
+                                     route="/gameday")
+            sent += 1
+
+            updates[target_uid] = {"mapValue": {"fields": {
+                "announced": {"arrayValue": {"values": [
+                    {"stringValue": item} for item in sorted(seen_now)
+                ]}},
+                "lastSentAt": {"timestampValue":
+                               now.isoformat().replace("+00:00", "Z")},
+            }}}
+
+        if updates:
+            _fs_patch(token, state_path, updates)
+    return sent
+
+
+def _reaction_body(token, reactor_uids):
+    """Looks up first names, then hands off to the pure wording below."""
+    names = []
+    for uid in reactor_uids[:2]:
+        doc = fs_get(token, f"users/{uid}")
+        fields = (doc or {}).get("fields", {})
+        name = (fields.get("username", {}).get("stringValue")
+                or fields.get("displayName", {}).get("stringValue")
+                or "Someone")
+        names.append(name.split(" ")[0])
+    return reaction_body(names, len(reactor_uids))
+
+
+def reaction_body(names, total):
+    """"Eric and Kade reacted to your picks" - and never what they said.
+
+    Pure, so the plural is covered by a test. "1 others" is exactly the sort
+    of thing that survives a visual check and reads as broken.
+
+    [names] is at most the first two; [total] is how many people actually
+    reacted, so the overflow is counted without looking up every name.
+
+    NEVER names the reaction itself. The only way to find out what was said
+    is to open the app - see notify_reactions.
+    """
+    shown = list(names[:2])
+    extra = total - len(shown)
+
+    if not shown:
+        who = "Someone"
+    elif extra > 0:
+        who = f"{', '.join(shown)} and {extra} other{'s' if extra > 1 else ''}"
+    elif len(shown) == 2:
+        who = f"{shown[0]} and {shown[1]}"
+    else:
+        who = shown[0]
+
+    return f"{who} reacted to your picks. Open Game Day to see what they said."
+
+
+# One message per person per this many minutes. Long enough that a flurry
+# during one game is a single notification; short enough that it still feels
+# like it happened just now.
+REACTION_BATCH_MINUTES = 15
+
+
 # How close to somebody's OWN first kickoff the last-chance nudge fires.
 # Short on purpose: it exists to catch a change of mind, and a warning two
 # hours out is just another reminder.
@@ -747,6 +881,8 @@ def send_notifications(token, season, week, slate):
             token, PROJECT, season, week, slate, now)),
         ("last chance", lambda: notify_last_chance(
             token, PROJECT, season, week, slate, now)),
+        ("reactions", lambda: notify_reactions(
+            token, PROJECT, season, week, now)),
         ("nudges", lambda: deliver_nudges(token, PROJECT, season, week)),
         # Last, and inside the same wrapper: a lock-screen decoration must
         # never be able to cost the scores their refresh.
