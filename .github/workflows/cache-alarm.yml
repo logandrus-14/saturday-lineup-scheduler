@@ -21,11 +21,23 @@ name: Score cache alarm
 
 on:
   schedule:
-    # Through the football day, plus one quiet-week check. These will be
-    # delayed like any GitHub cron — that's fine here. Catching a dead
-    # cache within a couple of hours instead of nine days is the whole
-    # point; it doesn't need to be punctual.
-    - cron: '20 17,20,23 * * 4,5,6,0'   # Thu-Sun, during games
+    # Asked for every 30 minutes right through the football day, plus one
+    # quiet-week check on a Monday.
+    #
+    # ASKING IS NOT GETTING. GitHub does not honour tight crons on free
+    # runners — measured median gap 93 minutes, worst case 210, which is
+    # the entire reason live_refresh.py exists. Three checks a day meant a
+    # dead scheduler could sit unnoticed for hours on the one afternoon it
+    # matters. Asking every 30 minutes will not deliver every 30 minutes,
+    # but it turns "three chances" into "many chances", and any one of them
+    # raises the alarm.
+    #
+    # This is the BEST-EFFORT half of the safety net. The half that does
+    # not depend on GitHub at all is in the app itself: it checks how old
+    # the scores it is showing are and tells the person looking at them —
+    # see scoresLookBehind in lib/core/utils/slate_freshness.dart.
+    - cron: '*/30 14-23 * * 4,5,6,0'    # Thu-Sun, through the football day
+    - cron: '*/30 0-6 * * 5,6,0,1'      # and past midnight UTC
     - cron: '20 16 * * 1'               # Monday, catches a quiet-week death
   workflow_dispatch: {}
 

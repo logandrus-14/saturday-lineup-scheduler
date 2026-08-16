@@ -738,6 +738,213 @@ def reaction_body(names, total):
     return f"{who} reacted to your picks. Open Game Day to see what they said."
 
 
+def notify_line_moves(token, project, season, week, slate, now):
+    """"The line on BYU moved to -8.5" - the midweek reason to open the app.
+
+    This app has a dead zone between Sunday and Thursday: nothing happens, so
+    nobody looks. A line moving on a pick somebody already made is the one
+    genuinely useful thing that happens in that window, and it is specific to
+    betting against a spread rather than picking winners.
+
+    Reads lineSnapshots, which the app writes on every save - a deduplicated
+    history of the line each pick was made against. See savePicks in
+    lineup_repository.dart for why it is an arrayUnion.
+
+    ONLY BEFORE KICKOFF. Once a game starts the pick is frozen and the line is
+    academic; telling somebody their number moved when they can do nothing
+    about it is noise dressed as information.
+
+    Deduped per person per game per line value, so a line that moves twice
+    sends twice but a tick that sees the same move again sends nothing.
+    """
+    import notify
+
+    by_id = {g["id"]: g for g in slate}
+    sent = 0
+
+    for group in fs_list(token, "groups"):
+        gid = group["name"].rsplit("/", 1)[-1]
+        doc = fs_get(token, f"groups/{gid}/board/{season}_{week}")
+        raw = (doc or {}).get("fields", {}).get("counts", {}) \
+                         .get("stringValue")
+        if not raw:
+            continue
+
+        for uid in json.loads(raw):
+            lineup = fs_get(token, f"users/{uid}/lineups/{season}_{week}")
+            snaps = (lineup or {}).get("fields", {}).get("lineSnapshots", {}) \
+                                  .get("arrayValue", {}).get("values", [])
+            if not snaps:
+                continue
+
+            # Last line this person actually saw for each game.
+            seen = {}
+            for entry in snaps:
+                f = entry.get("mapValue", {}).get("fields", {})
+                game_id = f.get("gameId", {}).get("stringValue")
+                team = f.get("team", {}).get("stringValue")
+                spread = f.get("spread", {}).get("doubleValue")
+                if spread is None:
+                    spread = f.get("spread", {}).get("integerValue")
+                if game_id is None or spread is None:
+                    continue
+                seen[game_id] = (team, float(spread))
+
+            for game_id, (team, old_line) in seen.items():
+                game = by_id.get(game_id)
+                if not game or game.get("spread") is None:
+                    continue
+
+                # Frozen picks cannot be changed, so the move is academic.
+                start = game.get("startDate")
+                if start:
+                    kickoff = dt.datetime.fromisoformat(
+                        start.replace("Z", "+00:00"))
+                    if kickoff <= now:
+                        continue
+
+                new_line = float(game["spread"])
+                if abs(new_line - old_line) < LINE_MOVE_MIN:
+                    continue
+
+                key = notify.dedupe_key(
+                    "linemove", uid, f"{season}_{week}_{game_id}_{new_line}")
+                if notify.already_sent(lambda p: fs_get(token, p), key):
+                    continue
+
+                body = (f"The line on {team} moved from "
+                        f"{_line_str(old_line)} to {_line_str(new_line)}. "
+                        f"Still happy with it?")
+                for dev, _ in notify.devices_for(
+                        lambda p: fs_list(token, p), uid):
+                    notify.send_to_token(token, project, dev,
+                                         "Line moved", body, route="/lineup")
+                notify.record_sent(
+                    lambda p, f: _fs_patch(token, p, f), key, "linemove", uid)
+                sent += 1
+    return sent
+
+
+def _line_str(value):
+    """-7.5 rather than -7.5000001, +3 rather than 3, and PK rather than +0.
+
+    PK is what a zero spread is actually called; "+0" reads like a bug.
+    """
+    if abs(value) < 0.05:
+        return "PK"
+    return f"{value:+.1f}".rstrip("0").rstrip(".")
+
+
+def notify_kickoffs(token, project, season, week, slate, now):
+    """"Kickoff - 3 of you took Colorado."
+
+    The moment this app is built around, pushed rather than only shown. Every
+    other pick'em freezes a whole week at once; here each pick reveals at its
+    own kickoff, and that has always happened silently.
+
+    ONE MESSAGE PER GROUP PER GAME, not per person per pick. A game with four
+    pickers in a group is one event, not four - and the same game across two
+    groups is two different splits, so those are two messages.
+
+    Sent only to people IN that group who picked that game: a reveal is only
+    interesting if you have something riding on it.
+
+    Deduped by group and game, so the 60-second loop cannot repeat it.
+    Mirrors kickoffReveals in lib/features/leaderboard/domain/kickoff_reveal.
+    dart - change how the split is described and change it in both.
+    """
+    import notify
+
+    window = dt.timedelta(minutes=KICKOFF_WINDOW_MINUTES)
+    just_started = []
+    for game in slate:
+        raw = game.get("startDate")
+        if not raw:
+            continue
+        start = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if now - window <= start <= now and game.get("status") != "final":
+            just_started.append((game, start))
+    if not just_started:
+        return 0
+
+    sent = 0
+    for group in fs_list(token, "groups"):
+        gid = group["name"].rsplit("/", 1)[-1]
+        board = fs_get(token, f"groups/{gid}/board/{season}_{week}")
+        # The revealed picks live under "json", NOT "picksJson" — checked
+        # against write_boards rather than assumed. A wrong field name here
+        # would fail silently and send nothing, forever.
+        raw = (board or {}).get("fields", {}).get("json", {}) \
+                           .get("stringValue")
+        if not raw:
+            continue
+        try:
+            # uid -> {slotName: {gameId, team, kickoffAt}} — see started_picks.
+            picks = json.loads(raw)
+        except ValueError:
+            continue
+
+        for game, _ in just_started:
+            game_id = str(game.get("id"))
+
+            # uid -> team, for everyone in this group who took this game.
+            took = {}
+            for uid, slots in picks.items():
+                for entry in (slots or {}).values():
+                    if str(entry.get("gameId")) == game_id:
+                        took[uid] = entry.get("team")
+            if not took:
+                continue
+
+            key = notify.dedupe_key("kickoff", gid, f"{season}_{week}_{game_id}")
+            if notify.already_sent(lambda p: fs_get(token, p), key):
+                continue
+
+            by_team = {}
+            for team in took.values():
+                by_team[team] = by_team.get(team, 0) + 1
+            body = kickoff_body(by_team)
+
+            title = f"{game.get('awayTeam')} @ {game.get('homeTeam')}"
+            for uid in took:
+                for dev, _ in notify.devices_for(
+                        lambda p: fs_list(token, p), uid):
+                    notify.send_to_token(token, project, dev, title, body,
+                                         route="/gameday")
+            notify.record_sent(
+                lambda p, f: _fs_patch(token, p, f), key, "kickoff", gid)
+            sent += 1
+    return sent
+
+
+def kickoff_body(by_team):
+    """"All 3 of you took Colorado", or "3 took Colorado, 1 took Miami".
+
+    Pure, so the plural is covered by a test - and it has to agree with
+    revealSummary in Dart, because the same person can read the notification
+    and then open the app to the banner saying the same thing.
+    """
+    entries = sorted(by_team.items(), key=lambda kv: -kv[1])
+    if not entries:
+        return "Kickoff."
+    if len(entries) == 1:
+        team, n = entries[0]
+        return (f"1 of you took {team}." if n == 1
+                else f"All {n} of you took {team}.")
+    return ", ".join(f"{n} took {team}" for team, n in entries) + "."
+
+
+# How soon after a game starts the kickoff notification is still worth
+# sending. Short: this is a moment, and a push about a game that started half
+# an hour ago is just noise.
+KICKOFF_WINDOW_MINUTES = 6
+
+
+# How far a line has to move before it is worth a notification. Half a point
+# is noise; a full point can change whether a pick is worth keeping.
+LINE_MOVE_MIN = 1.0
+
+
 # One message per person per this many minutes. Long enough that a flurry
 # during one game is a single notification; short enough that it still feels
 # like it happened just now.
@@ -866,6 +1073,55 @@ def deliver_nudges(token, project, season, week):
     return sent
 
 
+# ─── Which notifications are switched on ─────────────────────────────────
+#
+# A notification path that has never delivered to a human is not a feature,
+# it is a hypothesis. Line moves and kickoffs were built on Aug 16 and both
+# would otherwise debut on opening Saturday alongside two other first-time
+# push paths, on a scheduler that is mid-migration.
+#
+# **They cannot be held by simply not pushing this file.** Every notifier
+# lives in one list that live_refresh.py drives through send_notifications,
+# so pushing update_cache.py at all — for reactions, or for anything else —
+# used to turn these two on with it. That is what this switch is for: it
+# decouples "the scheduler is current" from "these two are live".
+#
+# OFF unless the environment says otherwise, and named per path so they can
+# be turned on one at a time, on different weekends. Set in the workflow's
+# env block (or Cloud Run's) to enable:
+#
+#     NOTIFY_LINE_MOVES: '1'
+#     NOTIFY_KICKOFFS: '1'
+#
+# Nothing else is gated. Finals, reminders, last chance, reactions, nudges
+# and Live Activities are all either proven against real people or already
+# running, and adding switches to those would only create a way to turn off
+# something that works.
+GATED_NOTIFICATIONS = {
+    "line moves": "NOTIFY_LINE_MOVES",
+    "kickoffs": "NOTIFY_KICKOFFS",
+}
+
+# Which switches this process has already reported. A live shift calls
+# send_notifications ~300 times, so an unconditional line would print 600
+# times a Saturday and teach everyone to skim the log — and the log is where
+# you look when a notification did not arrive.
+_reported_flags = set()
+
+
+def notification_enabled(label, env=None):
+    """Whether a gated notifier should run. Ungated ones always do.
+
+    Split out and given an [env] seam so the rule is testable without
+    setting process environment variables.
+    """
+    flag = GATED_NOTIFICATIONS.get(label)
+    if flag is None:
+        return True
+    source = os.environ if env is None else env
+    return source.get(flag) == "1"
+
+
 def send_notifications(token, season, week, slate):
     """Every notification for this tick. Never raises.
 
@@ -883,12 +1139,25 @@ def send_notifications(token, season, week, slate):
             token, PROJECT, season, week, slate, now)),
         ("reactions", lambda: notify_reactions(
             token, PROJECT, season, week, now)),
+        ("line moves", lambda: notify_line_moves(
+            token, PROJECT, season, week, slate, now)),
+        ("kickoffs", lambda: notify_kickoffs(
+            token, PROJECT, season, week, slate, now)),
         ("nudges", lambda: deliver_nudges(token, PROJECT, season, week)),
         # Last, and inside the same wrapper: a lock-screen decoration must
         # never be able to cost the scores their refresh.
         ("live activities", lambda: push_live_activities(
             token, season, week, slate, now)),
     ):
+        if not notification_enabled(label):
+            # Said once per process, not once per tick. A switch nobody can
+            # see is indistinguishable from a bug, which is the shape of the
+            # July outage: something exited 0 and stayed quiet for nine days.
+            if label not in _reported_flags:
+                _reported_flags.add(label)
+                print(f"  {label} notifications OFF "
+                      f"({GATED_NOTIFICATIONS[label]} is not '1')")
+            continue
         try:
             total += fn()
         except Exception as e:

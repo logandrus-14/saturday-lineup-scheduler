@@ -30,4 +30,10 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
           APNS_KEY_P8: ${{ secrets.APNS_KEY_P8 }}
+          # Line-move and kickoff notifications are OFF until they have met a
+          # real Saturday. Uncomment one to turn that path on — and do it in
+          # live-refresh.yml as well. Both jobs send, so a flag set in one
+          # place only works on the days that job happens to run.
+          # NOTIFY_LINE_MOVES: '1'
+          # NOTIFY_KICKOFFS: '1'
         run: python3 update_cache.py
