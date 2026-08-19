@@ -39,9 +39,10 @@ import urllib.request
 
 from update_cache import (  # noqa: E402
     FS, PARENT, QuotaExhausted, access_token, cfbd_get, current_season,
-    current_week, fs_get, record_run, send_notifications, write_boards,
+    current_week, fs_get, opening_week_split_on, record_run,
+    send_notifications, write_boards,
 )
-from scoring import build_slate  # noqa: E402
+from scoring import cfbd_week_for, games_in_app_week, build_slate  # noqa: E402
 
 # Stop before GitHub's 6h job limit so the shift ends cleanly rather than
 # being killed mid-write.
@@ -53,6 +54,11 @@ WARMUP = dt.timedelta(hours=1)
 
 
 def write_slate(token, season, week, games, lines):
+    """Write one app week's slate.
+
+    See `write_current_slates` below — during CFBD's week 1 there are two
+    of these, not one.
+    """
     body = {"fields": {
         "gamesJson": {"stringValue": json.dumps(games)},
         "linesJson": {"stringValue": json.dumps(lines)},
@@ -138,14 +144,26 @@ def main():
     while dt.datetime.now(dt.timezone.utc) - started < MAX_SHIFT:
         now = dt.datetime.now(dt.timezone.utc)
         try:
-            games = cfbd_get("/games", cfbd, year=season, week=week,
+            games = cfbd_get("/games", cfbd, year=season,
+                             week=(cfbd_week_for(week)
+                                   if opening_week_split_on() else week),
                              seasonType="regular", division="fbs")
         except urllib.error.HTTPError as e:
             if e.code == 429:
                 raise QuotaExhausted() from e
             raise
 
-        write_slate(token, season, week, games, lines)
+        # BOTH app weeks while CFBD is on its week 1: the openers and
+        # Labor Day weekend come back in one payload and have to be split
+        # before anybody's slate is written. See scoring.week_zero_ends_at.
+        # Behind the same switch as update_cache — see SPLIT_OPENING_WEEK
+        # there for why this cannot simply be deployed.
+        if opening_week_split_on() and cfbd_week_for(week) == 1:
+            for app_week in (0, 1):
+                write_slate(token, season, app_week,
+                            games_in_app_week(season, app_week, games), lines)
+        else:
+            write_slate(token, season, week, games, lines)
         # Tell update_cache.py to stand down: while a shift is running it
         # has nothing to add, and its own runs would just spend CFBD calls
         # re-fetching what we already refreshed a moment ago.

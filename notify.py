@@ -22,6 +22,7 @@ see `already_sent`. A notification sent twice is worse than one sent late.
 """
 import datetime as dt
 import json
+import os
 import urllib.error
 import urllib.request
 
@@ -29,6 +30,22 @@ FCM = "https://fcm.googleapis.com/v1/projects/{project}/messages:send"
 
 
 def _post(url, token, body):
+    # DRY_RUN stops here, at the last possible moment. The message has
+    # already been built, addressed and de-duplicated by this point, so a
+    # rehearsal exercises everything except the delivery itself.
+    # See the DRY_RUN note in update_cache.py.
+    if os.environ.get("DRY_RUN") == "1":
+        note = {}
+        if isinstance(body, dict):
+            note = body.get("message", {}).get("notification", {}) or {}
+        title = note.get("title", "?")
+        print(f"    DRY RUN — would send push: {title!r}")
+        try:
+            import update_cache
+            update_cache._dry_sends.append(title)
+        except Exception:  # noqa: BLE001 — the summary is a nicety, not the guard
+            pass
+        return {"name": "dry-run"}
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(), method="POST",
         headers={"Authorization": f"Bearer {token}",

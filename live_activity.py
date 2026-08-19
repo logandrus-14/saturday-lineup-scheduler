@@ -201,6 +201,18 @@ def send_update(
     staleness warning covers the same ground, but iOS enforces this one even
     if the app never runs again.
     """
+    # DRY_RUN stops before APNs. It returns 200 rather than an error so the
+    # caller's dead-token pruning stays on its normal path — a rehearsal
+    # must not delete a real device token. See update_cache.py's DRY_RUN.
+    if os.environ.get("DRY_RUN") == "1":
+        print(f"    DRY RUN — would push Live Activity ({event})")
+        try:
+            import update_cache
+            update_cache._dry_sends.append(f"live activity ({event})")
+        except Exception:  # noqa: BLE001 — the summary is a nicety
+            pass
+        return 200, '{"dryRun": true}'
+
     now = int(time.time())
     payload = {
         "aps": {

@@ -21,6 +21,8 @@ Mirrors, function for function:
   weekly_points <- computeWeeklyPoints
 """
 
+import datetime as dt
+
 SLOT_POINTS = {
     "qb": 7,
     "rb": 6,
@@ -67,6 +69,80 @@ def parse_status(game):
     if game.get("homePoints") is not None:
         return "live"
     return "scheduled"
+
+
+# ── Week 0 ───────────────────────────────────────────────────────────────
+#
+# College football opens with a handful of games the weekend BEFORE the
+# real first Saturday, and everyone calls that Week 0. CFBD does not: its
+# 2026 week 1 runs Aug 29 -> Sep 8 and holds 389 games across BOTH
+# weekends. Left alone that makes the app's first week ten days long, and
+# — worse — build_slate de-dupes by team, so every team playing on both
+# weekends would have its second game silently dropped.
+#
+# So the app numbers its own weeks. Only CFBD's week 1 is ever split:
+#
+#   app week 0  -> CFBD week 1, kickoff before the split
+#   app week 1  -> CFBD week 1, kickoff on or after the split
+#   app week N  -> CFBD week N, all of it
+#
+# Every app week from 1 up keeps CFBD's number, which is what stops the
+# app drifting a week behind every scoreboard in the country.
+#
+# MIRRORS lib/core/utils/season_weeks.dart. Change these together.
+
+
+def week_zero_ends_at(season):
+    """Midnight Mountain on the Tuesday after the season's first Saturday.
+
+    Tuesday because that is when this app already rolls a week over, and
+    because football does the same — nothing is scheduled between a Monday
+    night game and the following Wednesday. For 2026 that is Sep 1, a day
+    with no games on either side of it.
+
+    UTC-6, not -7: Mountain is on daylight time through September.
+    """
+    d = dt.datetime(season, 8, 25, tzinfo=dt.timezone.utc)
+    while d.weekday() != 5:          # 5 == Saturday
+        d += dt.timedelta(days=1)
+    tuesday = d + dt.timedelta(days=3)
+    return tuesday.replace(hour=6, minute=0, second=0, microsecond=0)
+
+
+def cfbd_week_for(app_week):
+    """Which CFBD week to ASK for, given an app week."""
+    return 1 if app_week == 0 else app_week
+
+
+def _kickoff(raw):
+    value = raw.get("startDate") or raw.get("start_date")
+    if not value:
+        return None
+    try:
+        return dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def in_app_week(season, app_week, raw):
+    """Whether one raw CFBD game belongs to [app_week].
+
+    A game with no kickoff time is KEPT, never dropped: being unable to
+    place a game is our problem, and hiding it would take it off somebody's
+    slate for a reason they could never see.
+    """
+    if app_week > 1:
+        return True
+    kickoff = _kickoff(raw)
+    if kickoff is None:
+        return True
+    split = week_zero_ends_at(season)
+    return kickoff < split if app_week == 0 else kickoff >= split
+
+
+def games_in_app_week(season, app_week, games_raw):
+    """The half of a CFBD week that belongs to one app week."""
+    return [g for g in (games_raw or []) if in_app_week(season, app_week, g)]
 
 
 def build_slate(games_raw, lines_raw):

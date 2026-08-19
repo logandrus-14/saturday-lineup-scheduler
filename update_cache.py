@@ -23,10 +23,147 @@ import tempfile
 import urllib.error
 import urllib.request
 
+# Module level, NOT a local import inside main(). It was missing entirely
+# from Aug 2 to Aug 16, and because the notification pass is wrapped in a
+# try/except the only symptom was one line — "notifications skipped: name
+# 'build_slate' is not defined" — in a log nobody reads. Every standalone
+# run of this script silently sent nothing for two weeks.
+#
+# Up here it fails at import instead of at the moment of sending, and
+# test_notification_flags.py asserts it is present.
+from scoring import (build_slate, cfbd_week_for,  # noqa: E402
+                     games_in_app_week, week_zero_ends_at)
+
 PROJECT = "saturday-lineup"
 CFBD = "https://api.collegefootballdata.com"
 FS = "https://firestore.googleapis.com/v1"
 PARENT = f"projects/{PROJECT}/databases/(default)/documents"
+
+# ─── DRY_RUN: do everything except change the world ──────────────────────
+#
+# Built Aug 16 2026 so the emergency plan for opening weekend could be
+# REHEARSED. If GitHub Actions dies mid-Saturday the fallback is to run this
+# script on Logan's Mac — but that fallback was unproven, because the only
+# way to try it was to write real documents and push real notifications to
+# nineteen people. A plan you cannot rehearse is a hope.
+#
+# With DRY_RUN=1 the script still authenticates, still calls CFBD, still
+# builds the slate, still decides every notification — and then writes
+# nothing and sends nothing. So it exercises the parts that actually break
+# (credentials, network, quota, parsing) and stops at the door.
+#
+#     DRY_RUN=1 FORCE_REFRESH=1 python3 update_cache.py
+#
+# FORCE_REFRESH matters: without it the throttle may skip the whole run and
+# the rehearsal proves nothing.
+#
+# **Reads are deliberately NOT faked.** It reads the real Firestore and the
+# real CFBD, because a dry run against invented data tests the invention.
+# The ~4 CFBD calls are the price, against a 30,000/month allowance.
+DRY_RUN = os.environ.get("DRY_RUN") == "1"
+
+# ─── SPLIT_OPENING_WEEK: the Week 0 split, off until everyone has updated ─
+#
+# CFBD folds two weekends into its week 1. The app now splits them — see
+# week_zero_ends_at in scoring.py — but the split cannot simply be deployed,
+# because THE SLATE IS SHARED WITH EVERY BUILD ANYONE HAS INSTALLED.
+#
+# Turn it on and `slate_2026_1` becomes Sep-only. Anybody still on a build
+# that predates Opening Week watches the Aug 29 games vanish from their
+# slate, with no way to reach week 0 at all, and their picks on those games
+# stop scoring. That is not a rollback-able mistake on a Saturday.
+#
+# So the code ships dark. With the switch OFF this file behaves exactly as
+# it did before the split existed: one CFBD week, one slate doc, weeks
+# numbered the way CFBD numbers them.
+#
+# TO TURN IT ON: uncomment the line in BOTH update-cache.yml and
+# live-refresh.yml — both jobs write slates, and a flag set in one place
+# only works on the days that job runs. Do it once most testers are on the
+# Opening Week build, and not before.
+#
+# Anything vague — `true`, `0`, empty, `'1 '` — reads as OFF, the same rule
+# the notification flags use. A half-set flag should fail towards the old
+# behaviour, which is the one that is known to work.
+SPLIT_OPENING_WEEK = os.environ.get("SPLIT_OPENING_WEEK") == "1"
+
+# ─── What happens while the switch is OFF ─────────────────────────────────
+#
+# Not "nothing". Off means TRANSITIONAL: the scheduler keeps `slate_{s}_1`
+# exactly as it was — both weekends, which is what every installed build
+# expects — and ALSO writes `slate_{s}_0` with the preseason games.
+#
+# That combination is safe in both directions, and it is worth writing down
+# why, because it looks like it should conflict:
+#
+#   • Builds without the split read `slate_{s}_1` and are untouched.
+#   • Builds WITH the split are on week 0 right now, so they read
+#     `slate_{s}_0` — from cache instead of calling CFBD themselves. That
+#     fallback was burning roughly twenty CFBD calls an hour off Logan's
+#     phone alone, and it scales with every tester who auto-updates.
+#   • A split build cannot even LOOK at week 1 yet: the week stepper only
+#     goes backwards from the current week, and the current week is 0 until
+#     Sep 1. So `slate_{s}_1` being the old combined slate is invisible to
+#     them until the day the switch gets flipped anyway.
+#
+# The boards follow the same rule — both weeks get written, because a
+# board costs Firestore writes and no CFBD calls at all, and a preseason
+# pick that never reveals at kickoff would be a real bug on Aug 29.
+
+# Logged ONCE per process, not once per call: a switch nobody can see in
+# the log is indistinguishable from a bug, which is the shape of the July
+# outage.
+_split_logged = False
+
+
+def opening_week_split_on():
+    global _split_logged
+    if not _split_logged:
+        _split_logged = True
+        print("  Opening Week split "
+              + ("ON" if SPLIT_OPENING_WEEK
+                 else "OFF (SPLIT_OPENING_WEEK is not '1')"))
+    return SPLIT_OPENING_WEEK
+
+# What a dry run would have done, printed as a summary at the end.
+_dry_writes = []
+_dry_sends = []
+
+
+def _send_write(req):
+    """The ONE door every Firestore write goes through.
+
+    A single choke point rather than a DRY_RUN check at each call site, so
+    a write added later is covered by default instead of silently escaping
+    the guard — which is the shape of bug this project keeps re-finding.
+    """
+    if DRY_RUN:
+        path = req.full_url.split("/documents/", 1)[-1].split("?")[0]
+        _dry_writes.append(path)
+        print(f"    DRY RUN — would write {path}")
+        return b""
+    return urllib.request.urlopen(req, timeout=20).read()
+
+
+def dry_run_summary():
+    """Printed at the end of a dry run so the rehearsal has a verdict."""
+    if not DRY_RUN:
+        return
+    import collections
+    print()
+    print("─" * 60)
+    print("DRY RUN SUMMARY — nothing was written and nothing was sent")
+    print(f"  Firestore writes suppressed: {len(_dry_writes)}")
+    for path, n in collections.Counter(
+            p.split("/")[0] + "/…" if "/" in p else p
+            for p in _dry_writes).most_common():
+        print(f"    {n:>4}  {path}")
+    print(f"  Notifications suppressed: {len(_dry_sends)}")
+    for kind, n in collections.Counter(_dry_sends).most_common():
+        print(f"    {n:>4}  {kind}")
+    print()
+    print("  If the numbers above look right, the same command without")
+    print("  DRY_RUN=1 will do exactly this for real.")
 
 
 def _b64url(data: bytes) -> str:
@@ -93,13 +230,23 @@ def current_week(key, season):
             end = w.get("endDate") or w.get("lastGameStart")
             if end and now < dt.datetime.fromisoformat(
                     end.replace("Z", "+00:00")):
-                return int(w["week"])
+                cfbd_wk = int(w["week"])
+                # CFBD's week 1 is TWO of this app's weeks — the openers
+                # and Labor Day weekend, ten days in one bucket. See
+                # week_zero_ends_at in scoring.py. Until the split is
+                # switched on, CFBD's numbering is ours.
+                if cfbd_wk != 1 or not opening_week_split_on():
+                    return cfbd_wk
+                return 0 if now < week_zero_ends_at(season) else 1
         if regular:
             return int(regular[-1]["week"])
     except Exception:
         pass
+    if (SPLIT_OPENING_WEEK
+            and dt.datetime.now(dt.timezone.utc) < week_zero_ends_at(season)):
+        return 0
     return min(max(1, (dt.datetime.now() - dt.datetime(season, 8, 24)).days
-                   // 7 + 1), 15)
+                   // 7 + (0 if SPLIT_OPENING_WEEK else 1)), 15)
 
 
 # ── How often to actually hit CFBD ───────────────────────────────────────
@@ -226,7 +373,7 @@ def record_run(token: str) -> None:
         data=json.dumps(body).encode(), method="PATCH",
         headers={"Authorization": f"Bearer {token}",
                  "Content-Type": "application/json"})
-    urllib.request.urlopen(req, timeout=20).read()
+    _send_write(req)
 
 
 class QuotaExhausted(Exception):
@@ -245,7 +392,7 @@ def write_json_cache(token, doc_id, payload):
         data=json.dumps(body).encode(), method="PATCH",
         headers={"Authorization": f"Bearer {token}",
                  "Content-Type": "application/json"})
-    urllib.request.urlopen(req, timeout=20).read()
+    _send_write(req)
 
 
 # ─── Per-game reveal ─────────────────────────────────────────────────────
@@ -377,7 +524,7 @@ def write_boards(token, season, week):
             data=json.dumps(body).encode(), method="PATCH",
             headers={"Authorization": f"Bearer {token}",
                      "Content-Type": "application/json"})
-        urllib.request.urlopen(req, timeout=20).read()
+        _send_write(req)
         written += 1
 
     return written, len(lineups)
@@ -400,7 +547,7 @@ def _fs_patch(token, path, fields):
         data=json.dumps({"fields": fields}).encode(), method="PATCH",
         headers={"Authorization": f"Bearer {token}",
                  "Content-Type": "application/json"})
-    urllib.request.urlopen(req, timeout=20).read()
+    _send_write(req)
 
 
 def notify_finals(token, project, season, week, slate):
@@ -1362,6 +1509,11 @@ def write_season_standings(token, season, through_week):
 
     # One slate per week, shared across every group.
     slates = {}
+    # FROM ONE, and that is deliberate rather than left over. Week 0 —
+    # Opening Week — is a PRACTICE week and is never charged to the season:
+    # eight games, seven picks, so it is decided by stacking order and most
+    # teams are not even on it. It is played for real and then not counted.
+    # Mirrors countsTowardSeason in lib/core/utils/season_weeks.dart.
     for week in range(1, through_week + 1):
         doc = fs_get(token, f"cache/slate_{season}_{week}")
         if not doc:
@@ -1440,7 +1592,7 @@ def write_season_standings(token, season, through_week):
             data=json.dumps(body).encode(), method="PATCH",
             headers={"Authorization": f"Bearer {token}",
                      "Content-Type": "application/json"})
-        urllib.request.urlopen(req, timeout=20).read()
+        _send_write(req)
         written += 1
 
     return written, len(slates)
@@ -1485,16 +1637,28 @@ def main():
     # Boards before the remaining CFBD calls: revealing a pick needs no
     # CFBD data, so running out of quota must never stop picks revealing
     # at kickoff.
-    try:
-        boards, read = write_boards(token, season, week)
-        print(f"wrote {boards} group board(s) from {read} lineup(s)")
-    except Exception as e:
-        print(f"group boards skipped: {e}")
+    # Boards for every week people can currently have picks in. While the
+    # split is off that is both 0 and 1: builds with the split save
+    # preseason picks under week 0, and a pick that never reveals at
+    # kickoff is a real bug rather than a cosmetic one. Boards cost
+    # Firestore writes and no CFBD calls.
+    board_weeks = [week] if opening_week_split_on() else sorted({0, week})
+    for board_week in board_weeks:
+        try:
+            boards, read = write_boards(token, season, board_week)
+            print(f"wrote {boards} group board(s) for week {board_week} "
+                  f"from {read} lineup(s)")
+        except Exception as e:
+            print(f"group boards for week {board_week} skipped: {e}")
 
+    # ASK CFBD FOR ITS WEEK, NOT OURS. Weeks 0 and 1 are both cut out of
+    # CFBD's week 1, so both are fetched with one pair of calls and split
+    # afterwards — the split costs no extra quota.
+    cfbd_wk = cfbd_week_for(week) if SPLIT_OPENING_WEEK else week
     try:
-        games = cfbd_get("/games", cfbd, year=season, week=week,
+        games = cfbd_get("/games", cfbd, year=season, week=cfbd_wk,
                          seasonType="regular", division="fbs")
-        lines = cfbd_get("/lines", cfbd, year=season, week=week,
+        lines = cfbd_get("/lines", cfbd, year=season, week=cfbd_wk,
                          seasonType="regular")
     except urllib.error.HTTPError as e:
         if e.code == 429:
@@ -1508,20 +1672,38 @@ def main():
     except Exception as e:
         print(f"  next-kickoff marker skipped: {e}")
 
-    body = {"fields": {
-        "gamesJson": {"stringValue": json.dumps(games)},
-        "linesJson": {"stringValue": json.dumps(lines)},
-        "season": {"integerValue": str(season)},
-        "week": {"integerValue": str(week)},
-        "updatedAt": {"timestampValue": dt.datetime.now(dt.timezone.utc)
-                      .isoformat().replace("+00:00", "Z")},
-    }}
-    req = urllib.request.Request(
-        f"{FS}/{PARENT}/cache/slate_{season}_{week}",
-        data=json.dumps(body).encode(), method="PATCH",
-        headers={"Authorization": f"Bearer {token}",
-                 "Content-Type": "application/json"})
-    urllib.request.urlopen(req, timeout=20).read()
+    # BOTH SLATES GET WRITTEN WHILE CFBD IS ON WEEK 1, not just the
+    # current one. Week 0 finishes on a Monday night and week 1 begins
+    # hours later; if only the current week were written, week 0's final
+    # scores would depend on the last run landing inside that gap. Two
+    # Firestore writes are cheaper than that risk, and cost no CFBD calls.
+    split = opening_week_split_on()
+    if cfbd_wk == 1:
+        # Both slates either way. What differs is what week 1 CONTAINS:
+        # split, it is Labor Day only; transitional, it stays the combined
+        # slate every installed build is already reading.
+        app_weeks = [0, 1]
+    else:
+        app_weeks = [week]
+    for app_week in app_weeks:
+        slice_games = (games_in_app_week(season, app_week, games)
+                       if (split or app_week == 0) else games)
+        body = {"fields": {
+            "gamesJson": {"stringValue": json.dumps(slice_games)},
+            "linesJson": {"stringValue": json.dumps(lines)},
+            "season": {"integerValue": str(season)},
+            "week": {"integerValue": str(app_week)},
+            "updatedAt": {"timestampValue": dt.datetime.now(dt.timezone.utc)
+                          .isoformat().replace("+00:00", "Z")},
+        }}
+        req = urllib.request.Request(
+            f"{FS}/{PARENT}/cache/slate_{season}_{app_week}",
+            data=json.dumps(body).encode(), method="PATCH",
+            headers={"Authorization": f"Bearer {token}",
+                     "Content-Type": "application/json"})
+        _send_write(req)
+        if len(app_weeks) > 1:
+            print(f"  slate_{season}_{app_week}: {len(slice_games)} games")
 
     # The calendar (which week is it) and the AP poll used to be called
     # straight from every phone, on every session, which quietly made CFBD
@@ -1537,7 +1719,7 @@ def main():
     try:
         write_json_cache(
             token, f"rankings_{season}_{week}",
-            cfbd_get("/rankings", cfbd, year=season, week=week,
+            cfbd_get("/rankings", cfbd, year=season, week=cfbd_wk,
                      seasonType="regular"))
         print(f"cached rankings_{season}_{week}")
     except Exception as e:
@@ -1563,6 +1745,7 @@ def main():
         print(f"season standings skipped: {e}")
 
     print(f"cached {season} week {week}: {len(games)} games, {len(lines)} lines")
+    dry_run_summary()
 
 
 if __name__ == "__main__":

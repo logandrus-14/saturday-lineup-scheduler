@@ -62,4 +62,9 @@ jobs:
           # place only works on the days that job happens to run.
           # NOTIFY_LINE_MOVES: '1'
           # NOTIFY_KICKOFFS: '1'
+          # Uncomment in BOTH workflows once most testers are on a build
+          # that knows about the preseason. Turning it on makes week 1
+          # Labor Day ONLY — anybody still on an older build loses the
+          # Aug 29 games from their slate the moment it flips.
+          # SPLIT_OPENING_WEEK: '1'
         run: python3 live_refresh.py
