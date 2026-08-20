@@ -36,9 +36,9 @@ jobs:
           # place only works on the days that job happens to run.
           # NOTIFY_LINE_MOVES: '1'
           # NOTIFY_KICKOFFS: '1'
-          # Uncomment in BOTH workflows once most testers are on a build
-          # that knows about the preseason. Turning it on makes week 1
-          # Labor Day ONLY — anybody still on an older build loses the
-          # Aug 29 games from their slate the moment it flips.
-          # SPLIT_OPENING_WEEK: '1'
+          # ON since Aug 20 2026, once build 19 was approved and out.
+          # Week 1 is Labor Day ONLY from here; the preseason is its own
+          # slate. Anybody still on a build that predates the preseason
+          # sees a Sep-only week 1 — that was the trade, taken knowingly.
+          SPLIT_OPENING_WEEK: '1'
         run: python3 update_cache.py
