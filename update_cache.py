@@ -275,9 +275,21 @@ MAX_AGE_BY_WEEKDAY = {
 # is being played, so nothing can change, and refreshing every five minutes
 # spends the monthly allowance on data that is already correct.
 #
-# This bit us for real. In the two days after the August 2026 rollover the
-# app burned ~29,500 of 30,000 calls with the season 26 days away, and the
-# quota does not reset until September — after opening weekend.
+# **The story this comment used to tell was wrong, and the correction is
+# the point.** It said the app burned ~29,500 of 30,000 calls in two days
+# with the season 26 days away. It did not. Remaining read 451 against a
+# stated tier of 30,000, and the inference from that number was false: the
+# key in use was a FREE-TIER key with a 1,000 limit. Swapping in the
+# Patreon account's key took remaining from 451 to 29,999. The measured
+# rate was ~170/day, 85x below the inferred one. See the CFBD QUOTA
+# section in HANDOFF.md, which had it right all along.
+#
+# The throttle is still worth having — it is cheap, and two real bugs were
+# found on the way (the app re-fetching scores that could not have changed,
+# and the scheduler refreshing for games weeks away). But it was designed
+# under a panic that turned out to be a billing misconfiguration, so if
+# QUIET_MAX_AGE ever gets in the way, loosening it is a smaller decision
+# than this comment used to imply.
 QUIET_MAX_AGE = 12 * 60          # refresh twice a day when nothing is close
 QUIET_IF_KICKOFF_BEYOND = 24     # hours
 
@@ -1510,7 +1522,7 @@ def write_season_standings(token, season, through_week):
     # One slate per week, shared across every group.
     slates = {}
     # FROM ONE, and that is deliberate rather than left over. Week 0 —
-    # Opening Week — is a PRACTICE week and is never charged to the season:
+    # the PRESEASON — is never charged to the season:
     # eight games, seven picks, so it is decided by stacking order and most
     # teams are not even on it. It is played for real and then not counted.
     # Mirrors countsTowardSeason in lib/core/utils/season_weeks.dart.
@@ -1527,9 +1539,24 @@ def write_season_standings(token, season, through_week):
             json.loads(games_raw), json.loads(lines_raw or "[]"))
 
     if not slates:
+        # NOTHING SCORED YET, but the global board still gets written —
+        # with everybody on zero. An empty document and a missing one look
+        # identical to a client, and "the season has not started" is a
+        # different thing from "this feature is broken". It also means the
+        # board can be looked at before Sep 3 rather than shipping
+        # unverified into the first week that counts.
+        zeros = {}
+        for group in fs_list(token, "groups"):
+            for v in (group.get("fields", {}).get("memberUids", {})
+                      .get("arrayValue", {}).get("values", [])):
+                uid = v.get("stringValue")
+                if uid:
+                    zeros[uid] = {"points": 0, "picksMade": 0}
+        write_global_standings(token, season, through_week, zeros)
         return 0, 0
 
     lineups = {}  # (uid, week) -> picks, so shared members are read once
+    everyone = {}  # uid -> season total, across every group
     written = 0
 
     for group in fs_list(token, "groups"):
@@ -1563,6 +1590,16 @@ def write_season_standings(token, season, through_week):
                 points += weekly_points(picks, games)
                 picks_made += len(picks)
             totals[uid] = {"points": points, "picksMade": picks_made}
+            # THE GLOBAL BOARD IS FREE HERE, and that is the whole reason
+            # it is built in this loop rather than its own job. Every uid
+            # it needs has already been read for its group, and the same
+            # per-week totals are already in hand — so one more dict costs
+            # nothing and one more document is the only write.
+            #
+            # Somebody in two groups is counted once: their points are a
+            # fact about them, not about a group, so the last write wins
+            # and every write says the same thing.
+            everyone[uid] = {"points": points, "picksMade": picks_made}
 
         # Read the standings we're about to replace, so we can tell who
         # actually moved. Done before the write, obviously, and treated as
@@ -1595,7 +1632,65 @@ def write_season_standings(token, season, through_week):
         _send_write(req)
         written += 1
 
+    write_global_standings(token, season, through_week, everyone)
     return written, len(slates)
+
+
+def write_global_standings(token, season, through_week, totals):
+    """One document holding every player's season total.
+
+    **Why this can exist at all:** `cache/{doc}` is readable by anybody
+    signed in and writable by nobody (firestore.rules), so a global board
+    needs no rules change and no per-user fan-out. One document read, the
+    same shape the group standings already use.
+
+    **Names are baked in.** The client cannot list `users/` — that is the
+    owner's admin screen and nothing else, deliberately, because profiles
+    carry names and emails. So the scheduler, which holds an admin token,
+    writes the display name alongside the points. It reads one user
+    document per player per run; at this size that is ~23 reads and no
+    CFBD calls.
+
+    **Only people in a group appear.** The totals come from walking
+    groups, so somebody who has never joined one is invisible here. That
+    is the same population the app already treats as playing, and a board
+    of people with no group would be a list of strangers with no context.
+    """
+    if not totals:
+        return
+
+    rows = {}
+    for uid, total in totals.items():
+        name = None
+        try:
+            doc = fs_get(token, f"users/{uid}")
+            fields = (doc or {}).get("fields", {})
+            name = (fields.get("displayName", {}).get("stringValue")
+                    or fields.get("username", {}).get("stringValue"))
+        except Exception:
+            pass
+        rows[uid] = {
+            "points": total["points"],
+            "picksMade": total["picksMade"],
+            # A missing name is not a reason to drop somebody from a board
+            # they are playing on. The app shows this as-is.
+            "name": name or "Player",
+        }
+
+    body = {"fields": {
+        "json": {"stringValue": json.dumps(rows)},
+        "season": {"integerValue": str(season)},
+        "throughWeek": {"integerValue": str(through_week)},
+        "updatedAt": {"timestampValue": dt.datetime.now(dt.timezone.utc)
+                      .isoformat().replace("+00:00", "Z")},
+    }}
+    req = urllib.request.Request(
+        f"{FS}/{PARENT}/cache/global_standings_{season}",
+        data=json.dumps(body).encode(), method="PATCH",
+        headers={"Authorization": f"Bearer {token}",
+                 "Content-Type": "application/json"})
+    _send_write(req)
+    print(f"wrote global standings for {len(rows)} player(s)")
 
 
 def main():
