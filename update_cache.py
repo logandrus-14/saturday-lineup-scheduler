@@ -1545,18 +1545,10 @@ def write_season_standings(token, season, through_week):
         # different thing from "this feature is broken". It also means the
         # board can be looked at before Sep 3 rather than shipping
         # unverified into the first week that counts.
-        zeros = {}
-        for group in fs_list(token, "groups"):
-            for v in (group.get("fields", {}).get("memberUids", {})
-                      .get("arrayValue", {}).get("values", [])):
-                uid = v.get("stringValue")
-                if uid:
-                    zeros[uid] = {"points": 0, "picksMade": 0}
-        write_global_standings(token, season, through_week, zeros)
+        write_global_standings(token, season, through_week, {}, {})
         return 0, 0
 
     lineups = {}  # (uid, week) -> picks, so shared members are read once
-    everyone = {}  # uid -> season total, across every group
     written = 0
 
     for group in fs_list(token, "groups"):
@@ -1590,16 +1582,6 @@ def write_season_standings(token, season, through_week):
                 points += weekly_points(picks, games)
                 picks_made += len(picks)
             totals[uid] = {"points": points, "picksMade": picks_made}
-            # THE GLOBAL BOARD IS FREE HERE, and that is the whole reason
-            # it is built in this loop rather than its own job. Every uid
-            # it needs has already been read for its group, and the same
-            # per-week totals are already in hand — so one more dict costs
-            # nothing and one more document is the only write.
-            #
-            # Somebody in two groups is counted once: their points are a
-            # fact about them, not about a group, so the last write wins
-            # and every write says the same thing.
-            everyone[uid] = {"points": points, "picksMade": picks_made}
 
         # Read the standings we're about to replace, so we can tell who
         # actually moved. Done before the write, obviously, and treated as
@@ -1632,48 +1614,97 @@ def write_season_standings(token, season, through_week):
         _send_write(req)
         written += 1
 
-    write_global_standings(token, season, through_week, everyone)
+    write_global_standings(token, season, through_week, slates, lineups)
     return written, len(slates)
 
 
-def write_global_standings(token, season, through_week, totals):
+def write_global_standings(token, season, through_week, slates, lineups):
     """One document holding every player's season total.
 
-    **Why this can exist at all:** `cache/{doc}` is readable by anybody
-    signed in and writable by nobody (firestore.rules), so a global board
-    needs no rules change and no per-user fan-out. One document read, the
-    same shape the group standings already use.
+    **It walks PEOPLE, not groups, and that is the whole correction.** The
+    first version totalled the group walk, which quietly meant "everyone in
+    a group" — on Aug 20 that was 11 of 23 accounts, and four of the twelve
+    it missed had lineups with real picks in them. A GLOBAL board that
+    silently omits people who are playing is worse than no board, because
+    nobody can tell it is doing it.
 
-    **Names are baked in.** The client cannot list `users/` — that is the
-    owner's admin screen and nothing else, deliberately, because profiles
-    carry names and emails. So the scheduler, which holds an admin token,
-    writes the display name alongside the points. It reads one user
-    document per player per run; at this size that is ~23 reads and no
-    CFBD calls.
+    **Who counts as playing:** anybody with a lineup document for this
+    season, or anybody in a group. An account that has done neither is
+    somebody who signed in once, and listing them would be a column of
+    strangers on nothing.
 
-    **Only people in a group appear.** The totals come from walking
-    groups, so somebody who has never joined one is invisible here. That
-    is the same population the app already treats as playing, and a board
-    of people with no group would be a list of strangers with no context.
+    `cache/{doc}` is readable by anybody signed in and writable by nobody
+    (firestore.rules), so this needs no rules change and no per-user
+    fan-out. Names are baked in because the client cannot list `users/` —
+    profiles carry names and emails, and that listing is the owner's admin
+    screen alone.
+
+    [lineups] is the cache the season walk already filled, so a member of a
+    group costs no extra reads here; only the people outside every group
+    are new.
     """
-    if not totals:
-        return
+    from scoring import weekly_points
+
+    in_group = set()
+    for group in fs_list(token, "groups"):
+        for v in (group.get("fields", {}).get("memberUids", {})
+                  .get("arrayValue", {}).get("values", [])):
+            if v.get("stringValue"):
+                in_group.add(v["stringValue"])
 
     rows = {}
-    for uid, total in totals.items():
-        name = None
-        try:
-            doc = fs_get(token, f"users/{uid}")
-            fields = (doc or {}).get("fields", {})
-            name = (fields.get("displayName", {}).get("stringValue")
-                    or fields.get("username", {}).get("stringValue"))
-        except Exception:
-            pass
+    for user in fs_list(token, "users"):
+        uid = user["name"].rsplit("/", 1)[-1]
+        fields = user.get("fields", {})
+
+        points = picks_made = 0
+        has_lineup = False
+        # BEFORE ANYTHING IS SCORED there are no slates to walk, and
+        # falling back to group membership here was the original bug in
+        # miniature: it excluded four people who had lineups with real
+        # picks in them. So probe the weeks people can currently have
+        # picks in — the preseason and week 1 — and score the ones that
+        # have a slate.
+        probe = dict(slates) if slates else {0: None, 1: None}
+        for week, games in probe.items():
+            if (uid, week) not in lineups:
+                doc = fs_get(token, f"users/{uid}/lineups/{season}_{week}")
+                # THE DOCUMENT EXISTING IS THE SIGNAL, not what is in it.
+                # An empty lineup means somebody opened the screen and
+                # started — and after the Week 1 wipe on Aug 20 it also
+                # means somebody whose picks this project deleted. Judging
+                # presence by picks would have quietly dropped both.
+                if doc is not None:
+                    has_lineup = True
+                slots = (doc or {}).get("fields", {}).get(
+                    "slots", {}).get("mapValue", {}).get("fields", {})
+                lineups[(uid, week)] = {
+                    name: {
+                        "gameId": v.get("mapValue", {}).get("fields", {})
+                                   .get("gameId", {}).get("stringValue"),
+                        "team": v.get("mapValue", {}).get("fields", {})
+                                 .get("team", {}).get("stringValue"),
+                    }
+                    for name, v in slots.items()
+                }
+            picks = lineups[(uid, week)]
+            if picks:
+                has_lineup = True
+            if games is None:
+                continue  # no slate for this week yet — presence only
+            points += weekly_points(picks, games)
+            picks_made += len(picks)
+
+        if not has_lineup and uid not in in_group:
+            continue
+
+        name = (fields.get("displayName", {}).get("stringValue")
+                or fields.get("username", {}).get("stringValue"))
         rows[uid] = {
-            "points": total["points"],
-            "picksMade": total["picksMade"],
+            "points": points,
+            "picksMade": picks_made,
             # A missing name is not a reason to drop somebody from a board
-            # they are playing on. The app shows this as-is.
+            # they are playing on.
             "name": name or "Player",
         }
 
