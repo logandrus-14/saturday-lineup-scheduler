@@ -1618,6 +1618,30 @@ def write_season_standings(token, season, through_week):
     return written, len(slates)
 
 
+def display_name_from(fields):
+    """What the app calls this person.
+
+    **MIRRORS `displayNameFrom` in profile_setup.dart, and the ORDER is the
+    whole content of it: username first, THEN displayName.** Getting it
+    backwards was the first version of this function, and it put the
+    Google/Apple name on the global board while every other screen in the
+    app showed the chosen one — Logan's dad appeared as "jandrus12" where
+    he had set "Gramps", and five other people were wrong the same way.
+
+    A name is not cosmetic on a leaderboard. It is how somebody finds
+    themselves.
+    """
+    username = fields.get("username", {}).get("stringValue")
+    if username and username.strip():
+        return username.strip()
+    display = fields.get("displayName", {}).get("stringValue")
+    if display and display.strip():
+        return display.strip()
+    # A missing name is not a reason to drop somebody from a board they
+    # are playing on.
+    return "Player"
+
+
 def write_global_standings(token, season, through_week, slates, lineups):
     """One document holding every player's season total.
 
@@ -1698,14 +1722,10 @@ def write_global_standings(token, season, through_week, slates, lineups):
         if not has_lineup and uid not in in_group:
             continue
 
-        name = (fields.get("displayName", {}).get("stringValue")
-                or fields.get("username", {}).get("stringValue"))
         rows[uid] = {
             "points": points,
             "picksMade": picks_made,
-            # A missing name is not a reason to drop somebody from a board
-            # they are playing on.
-            "name": name or "Player",
+            "name": display_name_from(fields),
         }
 
     body = {"fields": {
