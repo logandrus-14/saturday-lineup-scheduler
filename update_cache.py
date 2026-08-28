@@ -1513,14 +1513,36 @@ def _season_placing(token, season, uid, group_id=None):
     except ValueError:
         return (None, None)
 
-    totals = [r.get("points", 0) for r in rows]
-    for i, row in enumerate(rows):
-        if row.get("uid") != uid:
-            continue
-        # Tie-aware, like ranksFor in Dart: level on points means level in the
-        # standings, not ordered by whoever loaded first.
-        return (sum(1 for t in totals if t > totals[i]) + 1, len(rows))
-    return (None, None)
+    # THE DOCUMENT IS A MAP KEYED BY UID, not a list of rows. This read it
+    # as a list — `for r in rows` over a dict yields its KEYS, so the very
+    # first `r.get("points")` raised `'str' object has no attribute 'get'`
+    # and the whole push for that person died inside the per-user `try`,
+    # printing one line and moving on. Every Live Activity card belonging
+    # to somebody in a group was failing this way, silently, and the
+    # feature exists precisely for the hours when nobody is looking at the
+    # app to notice.
+    #
+    # The list form is still accepted, because write_season_standings is
+    # not the only thing that has ever written this and a shape assumption
+    # is what caused this in the first place.
+    if isinstance(rows, dict):
+        points = {u: (r or {}).get("points", 0) for u, r in rows.items()}
+    elif isinstance(rows, list):
+        points = {
+            r.get("uid"): r.get("points", 0)
+            for r in rows if isinstance(r, dict)
+        }
+    else:
+        return (None, None)
+
+    if uid not in points:
+        return (None, None)
+
+    mine = points[uid]
+    # Tie-aware, like ranksFor in Dart: level on points means level in the
+    # standings, not ordered by whoever loaded first.
+    ahead = sum(1 for p in points.values() if p > mine)
+    return (ahead + 1, len(points))
 
 
 def write_season_standings(token, season, through_week):
