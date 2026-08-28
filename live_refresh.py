@@ -42,7 +42,8 @@ from update_cache import (  # noqa: E402
     current_week, fs_get, opening_week_split_on, record_run,
     send_notifications, write_boards,
 )
-from scoring import cfbd_week_for, games_in_app_week, build_slate  # noqa: E402
+from scoring import (cfbd_week_for, fbs_only,  # noqa: E402
+                     games_in_app_week, build_slate)
 
 # Stop before GitHub's 6h job limit so the shift ends cleanly rather than
 # being killed mid-write.
@@ -144,10 +145,12 @@ def main():
     while dt.datetime.now(dt.timezone.utc) - started < MAX_SHIFT:
         now = dt.datetime.now(dt.timezone.utc)
         try:
-            games = cfbd_get("/games", cfbd, year=season,
-                             week=(cfbd_week_for(week)
-                                   if opening_week_split_on() else week),
-                             seasonType="regular", division="fbs")
+            games = fbs_only(
+                cfbd_get("/games", cfbd, year=season,
+                         week=(cfbd_week_for(week)
+                               if opening_week_split_on() else week),
+                         seasonType="regular", division="fbs",
+                         classification="fbs"))
         except urllib.error.HTTPError as e:
             if e.code == 429:
                 raise QuotaExhausted() from e

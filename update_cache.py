@@ -32,7 +32,7 @@ import urllib.request
 # Up here it fails at import instead of at the moment of sending, and
 # test_notification_flags.py asserts it is present.
 from scoring import (build_slate, cfbd_week_for,  # noqa: E402
-                     games_in_app_week, week_zero_ends_at)
+                     fbs_only, games_in_app_week, week_zero_ends_at)
 
 PROJECT = "saturday-lineup"
 CFBD = "https://api.collegefootballdata.com"
@@ -1194,6 +1194,13 @@ def deliver_nudges(token, project, season, week):
     rules let a client CREATE that document and never update or delete it,
     so a nudge cannot be replayed by anybody but this function.
     """
+    # Every other sender in this file imports notify locally; this one did
+    # not, so the whole function died on `name 'notify' is not defined` the
+    # moment a commissioner actually used the button. It failed inside
+    # send_notifications' per-label try, so the only trace was one quiet
+    # line in a log nobody reads.
+    import notify
+
     sent = 0
     for group in fs_list(token, "groups"):
         gid = group["name"].rsplit("/", 1)[-1]
@@ -1802,8 +1809,12 @@ def main():
     # afterwards — the split costs no extra quota.
     cfbd_wk = cfbd_week_for(week) if SPLIT_OPENING_WEEK else week
     try:
-        games = cfbd_get("/games", cfbd, year=season, week=cfbd_wk,
-                         seasonType="regular", division="fbs")
+        # BOTH filter names, then filter again on what came back. CFBD
+        # renamed `division` to `classification` and ignored the old one
+        # silently — see scoring.fbs_only for what that cost.
+        games = fbs_only(cfbd_get("/games", cfbd, year=season, week=cfbd_wk,
+                                  seasonType="regular", division="fbs",
+                                  classification="fbs"))
         lines = cfbd_get("/lines", cfbd, year=season, week=cfbd_wk,
                          seasonType="regular")
     except urllib.error.HTTPError as e:

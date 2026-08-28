@@ -140,6 +140,33 @@ def in_app_week(season, app_week, raw):
     return kickoff < split if app_week == 0 else kickoff >= split
 
 
+def fbs_only(games_raw):
+    """Games with at least one FBS team, judged from the DATA not the query.
+
+    CFBD renamed the games filter from `division` to `classification`, and
+    an unrecognised query parameter is ignored rather than rejected — so
+    `division=fbs` silently started returning every division. On Aug 28
+    2026 that turned the eight-game preseason slate into fifty-two, with
+    D2 games that had already kicked off showing as live and final, which
+    in turn woke the Live Activity and the widgets a day early.
+
+    Both parameter names are still sent, but a filter the SERVER applies
+    can be renamed out from under us again. This one reads the
+    classification already present on every game, so a third rename costs
+    nothing. A game with no classification at all is kept — dropping a
+    real game is worse than carrying a stray one.
+    """
+    out = []
+    for g in games_raw or []:
+        home = g.get("homeClassification")
+        away = g.get("awayClassification")
+        if home is None and away is None:
+            out.append(g)
+        elif "fbs" in (home, away):
+            out.append(g)
+    return out
+
+
 def games_in_app_week(season, app_week, games_raw):
     """The half of a CFBD week that belongs to one app week."""
     return [g for g in (games_raw or []) if in_app_week(season, app_week, g)]
