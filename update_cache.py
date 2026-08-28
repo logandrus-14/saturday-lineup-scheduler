@@ -1705,10 +1705,32 @@ def write_global_standings(token, season, through_week, slates, lineups):
             if v.get("stringValue"):
                 in_group.add(v["stringValue"])
 
+    # LISTING `users/` IS NOT THE SAME AS LISTING PEOPLE, and that gap is
+    # what kept new players off this board. A Firestore collection listing
+    # returns DOCUMENTS; an account whose `users/{uid}` profile has never
+    # been written has subcollections (its lineups) and no document, so it
+    # is simply absent from the listing. On Aug 28 2026 that was 5 of 34
+    # accounts, and one of them — Cooper Hall, who had joined a group that
+    # same day — was the report: "the global leaderboard hasn't added new
+    # users that have joined the app."
+    #
+    # So the walk is the UNION of the profile listing and everybody in a
+    # group. Group membership is already gathered above and costs nothing
+    # extra, and it is the right second source: somebody in a group is
+    # unambiguously playing.
+    #
+    # Deliberately NOT every Auth account. Four of the five missing here
+    # were abandoned DUPLICATE accounts, in no group, last opened in June
+    # or July, still holding a lineup from the old combined week 1. Listing
+    # those would put the same person on the board twice, which is a worse
+    # board than one that is merely late.
+    profiles = {u["name"].rsplit("/", 1)[-1]: u.get("fields", {})
+                for u in fs_list(token, "users")}
+    walk = list(profiles) + [u for u in sorted(in_group) if u not in profiles]
+
     rows = {}
-    for user in fs_list(token, "users"):
-        uid = user["name"].rsplit("/", 1)[-1]
-        fields = user.get("fields", {})
+    for uid in walk:
+        fields = profiles.get(uid, {})
 
         points = picks_made = 0
         has_lineup = False
