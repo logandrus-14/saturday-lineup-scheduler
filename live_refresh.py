@@ -120,6 +120,30 @@ def next_delay(games, now):
     if any(s == "live" for s in states):
         return LIVE_INTERVAL
 
+    # A GAME THAT HAS KICKED OFF BUT HAS NO SCORE YET IS NEITHER.
+    #
+    # `status_of` calls a game "live" only once the feed publishes points,
+    # and CFBD does not do that at kickoff — there is a gap of minutes.
+    # In that gap the game is still "scheduled", and it is not in
+    # `upcoming` either, because its start time has passed. It fell
+    # through both tests and counted for nothing, so the delay was decided
+    # by the NEXT kickoff three hours away and the shift ended.
+    #
+    # **That happened at 16:00Z on Aug 29 2026 — the first kickoff of the
+    # season.** The watch stopped at the exact moment the season started,
+    # and the scores sat eight minutes stale while North Carolina played
+    # at TCU. Nothing errored; the shift exited 0 saying "nothing is
+    # close".
+    #
+    # A kickoff that has passed on a game that is not final means football
+    # is being played, whatever the feed has caught up with.
+    for g in games:
+        if status_of(g) == "final" or not g.get("startDate"):
+            continue
+        start = dt.datetime.fromisoformat(g["startDate"].replace("Z", "+00:00"))
+        if start <= now:
+            return LIVE_INTERVAL
+
     upcoming = []
     for g in games:
         if status_of(g) != "scheduled" or not g.get("startDate"):
