@@ -49,6 +49,12 @@ from scoring import (apply_scoreboard, cfbd_week_for,  # noqa: E402
 # being killed mid-write.
 MAX_SHIFT = dt.timedelta(hours=5, minutes=30)
 LIVE_INTERVAL = 60          # something is being played
+
+# Consecutive failed ticks before a shift gives up and lets the next
+# scheduled run start clean. Five minutes of nothing is long enough to
+# ride out a bad gateway or a dropped connection, and short enough that a
+# genuinely broken shift is not still pretending to watch at midnight.
+MAX_TICK_FAILURES = 5
 IDLE_INTERVAL = 5 * 60      # nothing live yet, kickoff still ahead
 # How long before the first kickoff to bother staying awake at all.
 WARMUP = dt.timedelta(hours=1)
@@ -218,6 +224,9 @@ def main():
     started = dt.datetime.now(dt.timezone.utc)
     token_minted = started
     ticks = 0
+    # Consecutive ticks that could not get data — see the handlers in
+    # the loop. Reset by any tick that succeeds.
+    failures = 0
     # Zero so the first tick publishes: a shift that starts right after
     # somebody joins should not wait half an hour to show them.
     global_written = dt.datetime.fromtimestamp(0, dt.timezone.utc)
@@ -255,23 +264,79 @@ def main():
         except urllib.error.HTTPError as e:
             if e.code == 429:
                 raise QuotaExhausted() from e
-            raise
+            # A BAD MINUTE IS NOT A BAD AFTERNOON. This used to `raise`, and
+            # on Aug 29 2026 — the first live Saturday — it ended three
+            # separate shifts:
+            #
+            #   tick 38: 2 live, 1 final — next in 60s
+            #   HTTPError: 502 Bad Gateway
+            #
+            # CFBD returned one bad gateway at 20:19Z and the whole 5.5-hour
+            # watch exited, mid-game, with two games in play. The scoreboard
+            # call directly above already had this right — "a stale score
+            # beats no refresh" — and the fetch it depends on did not.
+            #
+            # So a failed tick is now SKIPPED, not fatal: the cache keeps the
+            # last good slate, which is exactly what it is for. The counter
+            # is what stops this becoming the other failure — a shift that
+            # sits in a loop achieving nothing while looking alive. After
+            # MAX_TICK_FAILURES consecutive misses something is actually
+            # wrong, and the next scheduled run deserves a clean start.
+            failures += 1
+            print(f"  tick skipped ({failures}/{MAX_TICK_FAILURES}): "
+                  f"HTTP {e.code} on /games", flush=True)
+            if failures >= MAX_TICK_FAILURES:
+                print("  too many consecutive failures — ending the shift so "
+                      "the next scheduled run can pick it up")
+                return
+            time.sleep(LIVE_INTERVAL)
+            continue
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            # THE ERROR THAT WAS NOT EVEN BEING CAUGHT. A dropped connection
+            # or a read timeout is not an HTTPError, so it never reached the
+            # handler above and killed the shift without so much as naming
+            # itself. On a laptop that sleeps, a phone tether, or a free
+            # runner, this is the likeliest failure of the lot.
+            failures += 1
+            print(f"  tick skipped ({failures}/{MAX_TICK_FAILURES}): {e}",
+                  flush=True)
+            if failures >= MAX_TICK_FAILURES:
+                print("  too many consecutive failures — ending the shift so "
+                      "the next scheduled run can pick it up")
+                return
+            time.sleep(LIVE_INTERVAL)
+            continue
+
+        # A tick that got its data resets the run — MAX_TICK_FAILURES counts
+        # CONSECUTIVE misses, because an afternoon with a dozen scattered
+        # blips is a healthy afternoon.
+        failures = 0
 
         # BOTH app weeks while CFBD is on its week 1: the openers and
         # Labor Day weekend come back in one payload and have to be split
         # before anybody's slate is written. See scoring.week_zero_ends_at.
         # Behind the same switch as update_cache — see SPLIT_OPENING_WEEK
         # there for why this cannot simply be deployed.
-        if opening_week_split_on() and cfbd_week_for(week) == 1:
-            for app_week in (0, 1):
-                write_slate(token, season, app_week,
-                            games_in_app_week(season, app_week, games), lines)
-        else:
-            write_slate(token, season, week, games, lines)
-        # Tell update_cache.py to stand down: while a shift is running it
-        # has nothing to add, and its own runs would just spend CFBD calls
-        # re-fetching what we already refreshed a moment ago.
-        record_run(token)
+        #
+        # WRAPPED FOR THE SAME REASON AS THE FETCH ABOVE. These were the
+        # other two calls in this loop that could end a shift, and a
+        # Firestore blip is no more worth an afternoon than a CFBD one. A
+        # failed write leaves the previous slate in place, which is the same
+        # outcome as a skipped tick and is what the cache is for.
+        try:
+            if opening_week_split_on() and cfbd_week_for(week) == 1:
+                for app_week in (0, 1):
+                    write_slate(token, season, app_week,
+                                games_in_app_week(season, app_week, games),
+                                lines)
+            else:
+                write_slate(token, season, week, games, lines)
+            # Tell update_cache.py to stand down: while a shift is running it
+            # has nothing to add, and its own runs would just spend CFBD calls
+            # re-fetching what we already refreshed a moment ago.
+            record_run(token)
+        except Exception as e:
+            print(f"  slate write skipped: {e}", flush=True)
         ticks += 1
 
         # Boards republish every tick, so a pick reveals within a minute of
