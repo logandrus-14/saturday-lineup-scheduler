@@ -40,7 +40,7 @@ import urllib.request
 from update_cache import (  # noqa: E402
     FS, PARENT, QuotaExhausted, access_token, cfbd_get, current_season,
     current_week, fs_get, opening_week_split_on, record_run,
-    send_notifications, write_boards,
+    send_notifications, write_boards, write_global_standings,
 )
 from scoring import (cfbd_week_for, fbs_only,  # noqa: E402
                      games_in_app_week, build_slate)
@@ -52,6 +52,20 @@ LIVE_INTERVAL = 60          # something is being played
 IDLE_INTERVAL = 5 * 60      # nothing live yet, kickoff still ahead
 # How long before the first kickoff to bother staying awake at all.
 WARMUP = dt.timedelta(hours=1)
+
+# How often, inside a shift, to republish the GLOBAL board.
+#
+# It is not in the per-tick work and must not be: it reads a document per
+# person, so at 60s it would cost thousands of reads an afternoon to
+# produce a number that barely moves. But leaving it to update_cache means
+# it is only as fresh as THAT job, and GitHub delivered gaps of 199, 313,
+# 544 and 695 minutes over Aug 26-28. Somebody who joined a group during a
+# Saturday simply was not on the board — reported twice by Logan on Aug 28
+# and 29.
+#
+# Half an hour is the compromise: eleven writes across a full shift,
+# roughly thirty reads each.
+GLOBAL_EVERY = dt.timedelta(minutes=30)
 
 
 def write_slate(token, season, week, games, lines):
@@ -120,6 +134,29 @@ def next_delay(games, now):
     return None  # nothing for over an hour — let the shift end
 
 
+def _counting_slates(token, season, through_week):
+    """The built slates for every week that counts, keyed by week.
+
+    From ONE, never zero: week 0 is the preseason and is never charged to
+    the season. Mirrors write_season_standings, which is where this
+    arithmetic lives for the scheduled job — kept to a handful of document
+    reads so it is affordable on the live loop's slow clock.
+    """
+    slates = {}
+    for wk in range(1, (through_week or 0) + 1):
+        doc = fs_get(token, f"cache/slate_{season}_{wk}")
+        if not doc:
+            continue
+        fields = doc.get("fields", {})
+        games_raw = fields.get("gamesJson", {}).get("stringValue")
+        if not games_raw:
+            continue
+        lines_raw = fields.get("linesJson", {}).get("stringValue")
+        slates[wk] = build_slate(json.loads(games_raw),
+                                 json.loads(lines_raw or "[]"))
+    return slates
+
+
 def main():
     key = json.loads(os.environ["FIREBASE_SERVICE_ACCOUNT"])
     cfbd = os.environ["CFBD_API_KEY"]
@@ -139,6 +176,9 @@ def main():
 
     started = dt.datetime.now(dt.timezone.utc)
     ticks = 0
+    # Zero so the first tick publishes: a shift that starts right after
+    # somebody joins should not wait half an hour to show them.
+    global_written = dt.datetime.fromtimestamp(0, dt.timezone.utc)
     print(f"shift start {started:%Y-%m-%d %H:%M}Z — {season} week {week}, "
           f"{len(lines)} line records reused")
 
@@ -191,6 +231,32 @@ def main():
                 print(f"  sent {n} notification(s)")
         except Exception as e:
             print(f"  notifications skipped: {e}")
+
+        # The global board, on its own slow clock — see GLOBAL_EVERY.
+        # Wrapped like everything else down here: a leaderboard is worth
+        # less than the scores, and must never be able to cost them their
+        # refresh.
+        #
+        # **THE SLATES ARE BUILT AND PASSED, NEVER LEFT EMPTY.** Handing
+        # write_global_standings `{}` makes it write everybody on ZERO —
+        # correct while nothing has been scored, and a wipe of the real
+        # season totals from week 1 onward. It would have looked fine
+        # tonight and quietly erased the board every thirty minutes of
+        # every Saturday after Labor Day.
+        #
+        # Deliberately NOT write_season_standings, which does this and the
+        # per-group totals: that path also sends rank-change
+        # notifications, and a push loop nobody has ever seen meet a real
+        # Saturday is not something to start in the live job. This
+        # function sends nothing.
+        if now - global_written >= GLOBAL_EVERY:
+            try:
+                write_global_standings(
+                    token, season, week, _counting_slates(token, season, week),
+                    {})
+                global_written = now
+            except Exception as e:
+                print(f"  global standings skipped: {e}")
 
         delay = next_delay(games, now)
         live = sum(1 for g in games if status_of(g) == "live")
