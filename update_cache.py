@@ -358,10 +358,15 @@ def record_next_kickoff(token: str, games) -> None:
             upcoming.append(start)
     if not upcoming:
         return
+    # MASKED, or record_run's write on the next run deletes this again.
+    # That is what had been happening: this marker exists so a run can skip
+    # CFBD entirely when football is weeks away, and it never survived long
+    # enough to be read. cache/scheduler_state held `lastRun` and nothing
+    # else, measured Aug 29 2026.
     _fs_patch(token, f"cache/{STATE_DOC}", {
         "nextKickoffAt": {"timestampValue":
                           min(upcoming).isoformat().replace("+00:00", "Z")},
-    })
+    }, mask=["nextKickoffAt"])
 
 
 def record_run(token: str) -> None:
@@ -378,14 +383,13 @@ def record_run(token: str) -> None:
     Recording the attempt instead means a bad run costs one throttle
     interval rather than an endless retry loop.
     """
-    body = {"fields": {"lastRun": {"timestampValue": dt.datetime.now(
-        dt.timezone.utc).isoformat().replace("+00:00", "Z")}}}
-    req = urllib.request.Request(
-        f"{FS}/{PARENT}/cache/{STATE_DOC}",
-        data=json.dumps(body).encode(), method="PATCH",
-        headers={"Authorization": f"Bearer {token}",
-                 "Content-Type": "application/json"})
-    _send_write(req)
+    # Masked for the same reason as record_next_kickoff: these two write
+    # different fields of the same document, and unmasked each one deleted
+    # the other's.
+    _fs_patch(token, f"cache/{STATE_DOC}", {
+        "lastRun": {"timestampValue": dt.datetime.now(
+            dt.timezone.utc).isoformat().replace("+00:00", "Z")},
+    }, mask=["lastRun"])
 
 
 class QuotaExhausted(Exception):
@@ -553,9 +557,23 @@ def write_boards(token, season, week):
 # recorded under a key naming the EVENT, and the record is checked first.
 
 
-def _fs_patch(token, path, fields):
+def _fs_patch(token, path, fields, mask=None):
+    """PATCH a document.
+
+    **WITHOUT [mask] THIS REPLACES THE WHOLE DOCUMENT.** That is the
+    Firestore REST contract, and it is not what "patch" suggests: a PATCH
+    carrying one field and no `updateMask` deletes every other field on
+    the document. Three writes in this file were quietly doing that.
+
+    Pass [mask] — the field names being written — whenever the document
+    has anything on it worth keeping. Leave it off only when the fields
+    given ARE the whole document.
+    """
+    url = f"{FS}/{PARENT}/{path}"
+    if mask:
+        url += "?" + "&".join(f"updateMask.fieldPaths={m}" for m in mask)
     req = urllib.request.Request(
-        f"{FS}/{PARENT}/{path}",
+        url,
         data=json.dumps({"fields": fields}).encode(), method="PATCH",
         headers={"Authorization": f"Bearer {token}",
                  "Content-Type": "application/json"})
@@ -814,7 +832,14 @@ def notify_reactions(token, project, season, week, now):
         state_path = f"groups/{gid}/reactionNotify/{season}_{week}"
         state = (fs_get(token, state_path) or {}).get("fields", {})
 
-        updates = {}
+        # STARTS FROM WHAT IS ALREADY THERE. This was an empty dict, and
+        # the write below is an unmasked PATCH — so each pass replaced the
+        # whole document with just the people notified in THAT pass, and
+        # everybody else's `announced` list vanished. Their next reaction
+        # then read as new again. In a group where two people get reactions
+        # during the same game, that is a notification loop, and it would
+        # only ever have shown up on a live Saturday.
+        updates = dict(state)
         for target_uid, seen_now in current.items():
             prior = state.get(target_uid, {}).get("mapValue", {}) \
                          .get("fields", {})
@@ -1232,10 +1257,13 @@ def deliver_nudges(token, project, season, week):
         # Stamped even when nobody was reachable. The request HAS been
         # handled, and leaving it pending would retry the same empty send on
         # every tick for the rest of the week.
+        # Masked so the request itself survives being answered. Unmasked,
+        # stamping the delivery deleted `uids` and `requestedBy`, leaving a
+        # document that says a nudge went out and cannot say to whom.
         _fs_patch(token, f"groups/{gid}/nudges/{season}_{week}", {
             "sentAt": {"timestampValue": dt.datetime.now(dt.timezone.utc)
                        .isoformat().replace("+00:00", "Z")},
-        })
+        }, mask=["sentAt"])
     return sent
 
 
