@@ -67,6 +67,23 @@ WARMUP = dt.timedelta(hours=1)
 # roughly thirty reads each.
 GLOBAL_EVERY = dt.timedelta(minutes=30)
 
+# How often to mint a FRESH Firestore token.
+#
+# **A Google service-account token lasts one hour, and a shift lasts five
+# and a half.** The token was fetched once at startup and never renewed,
+# so every shift died at the 45-to-60 minute mark with a wall of
+# `HTTP Error 401: Unauthorized` — boards, notifications, live activities,
+# then the slate write itself, and the process exited. Nothing looked
+# wrong until somebody noticed the scores had stopped.
+#
+# It killed the local shift at tick 43 on Aug 29 2026, mid-way through the
+# first game of the season, and it would have killed every scheduled shift
+# the same way — the 15:00 GitHub run included.
+#
+# Forty-five minutes leaves a quarter of an hour of headroom on a
+# one-hour token.
+TOKEN_EVERY = dt.timedelta(minutes=45)
+
 
 def write_slate(token, season, week, games, lines):
     """Write one app week's slate.
@@ -199,6 +216,7 @@ def main():
             raise
 
     started = dt.datetime.now(dt.timezone.utc)
+    token_minted = started
     ticks = 0
     # Zero so the first tick publishes: a shift that starts right after
     # somebody joins should not wait half an hour to show them.
@@ -208,6 +226,15 @@ def main():
 
     while dt.datetime.now(dt.timezone.utc) - started < MAX_SHIFT:
         now = dt.datetime.now(dt.timezone.utc)
+
+        # Renew before it expires — see TOKEN_EVERY. Deliberately NOT in a
+        # try: a shift that cannot authenticate has nothing to offer, and
+        # failing here is far better than the silent 401 death this
+        # replaces.
+        if now - token_minted >= TOKEN_EVERY:
+            token = access_token(key)
+            token_minted = now
+            print(f"  token renewed at {now:%H:%M}Z")
         try:
             games = fbs_only(
                 cfbd_get("/games", cfbd, year=season,
