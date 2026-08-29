@@ -31,8 +31,9 @@ import urllib.request
 #
 # Up here it fails at import instead of at the moment of sending, and
 # test_notification_flags.py asserts it is present.
-from scoring import (build_slate, cfbd_week_for,  # noqa: E402
-                     fbs_only, games_in_app_week, week_zero_ends_at)
+from scoring import (apply_scoreboard, build_slate,  # noqa: E402
+                     cfbd_week_for, fbs_only, games_in_app_week,
+                     week_zero_ends_at)
 
 PROJECT = "saturday-lineup"
 CFBD = "https://api.collegefootballdata.com"
@@ -1887,6 +1888,13 @@ def main():
         games = fbs_only(cfbd_get("/games", cfbd, year=season, week=cfbd_wk,
                                   seasonType="regular", division="fbs",
                                   classification="fbs"))
+        # Live scores live on /scoreboard, not /games — see
+        # scoring.apply_scoreboard for what that cost on opening day.
+        try:
+            games = apply_scoreboard(
+                games, cfbd_get("/scoreboard", cfbd, classification="fbs"))
+        except Exception as e:
+            print(f"  scoreboard skipped: {e}")
         lines = cfbd_get("/lines", cfbd, year=season, week=cfbd_wk,
                          seasonType="regular")
     except urllib.error.HTTPError as e:

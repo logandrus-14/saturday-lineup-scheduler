@@ -42,8 +42,8 @@ from update_cache import (  # noqa: E402
     current_week, fs_get, opening_week_split_on, record_run,
     send_notifications, write_boards, write_global_standings,
 )
-from scoring import (cfbd_week_for, fbs_only,  # noqa: E402
-                     games_in_app_week, build_slate)
+from scoring import (apply_scoreboard, cfbd_week_for,  # noqa: E402
+                     fbs_only, games_in_app_week, build_slate)
 
 # Stop before GitHub's 6h job limit so the shift ends cleanly rather than
 # being killed mid-write.
@@ -215,6 +215,16 @@ def main():
                                if opening_week_split_on() else week),
                          seasonType="regular", division="fbs",
                          classification="fbs"))
+            # THE SCORES COME FROM /scoreboard, NOT /games — see
+            # scoring.apply_scoreboard. One extra call a tick, and without
+            # it there are no live scores anywhere in the app. Never worth
+            # failing the tick over: a stale score beats no refresh.
+            try:
+                games = apply_scoreboard(
+                    games, cfbd_get("/scoreboard", cfbd,
+                                    classification="fbs"))
+            except Exception as e:
+                print(f"  scoreboard skipped: {e}")
         except urllib.error.HTTPError as e:
             if e.code == 429:
                 raise QuotaExhausted() from e

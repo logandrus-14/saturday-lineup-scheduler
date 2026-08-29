@@ -167,6 +167,57 @@ def fbs_only(games_raw):
     return out
 
 
+def apply_scoreboard(games_raw, scoreboard):
+    """Overlay CFBD's LIVE scoreboard onto the schedule rows.
+
+    **`/games` DOES NOT CARRY LIVE SCORES.** This project assumed it did —
+    "the regular games endpoint already reflects live scores, no special
+    live endpoint needed" — and that assumption went untested until the
+    first kickoff of the season. Eighteen minutes into North Carolina at
+    TCU on Aug 29 2026, `/games` still returned `homePoints: null`,
+    `period: null`, `clock: null`, while `/scoreboard` had the game
+    `in_progress`, 1st quarter, 9:22 left, UNC 3 TCU 0.
+
+    Without this the app has no live scores at all — not on Game Day, not
+    on the Locked In board, not on a card — and nothing goes final until
+    CFBD backfills `/games` some time after the whistle.
+
+    `/games` stays the source of truth for WHICH games exist and their
+    spreads; the scoreboard supplies what is happening in them right now.
+    Only fields the scoreboard actually knows are copied, and a game it
+    does not mention is left exactly as it was.
+    """
+    by_id = {}
+    for entry in (scoreboard or []):
+        if entry.get("id") is not None:
+            by_id[entry["id"]] = entry
+
+    out = []
+    for g in (games_raw or []):
+        live = by_id.get(g.get("id"))
+        if not live:
+            out.append(g)
+            continue
+        merged = dict(g)
+        home = (live.get("homeTeam") or {}).get("points")
+        away = (live.get("awayTeam") or {}).get("points")
+        if home is not None:
+            merged["homePoints"] = home
+        if away is not None:
+            merged["awayPoints"] = away
+        for key in ("period", "clock"):
+            if live.get(key) is not None:
+                merged[key] = live[key]
+        # NEVER UN-FINISH A GAME. `/games` backfills `completed` eventually
+        # and the scoreboard drops finished games from its window, so the
+        # merge has to be one-way: either source saying final makes it
+        # final, and neither can take that back.
+        if live.get("status") == "completed" or g.get("completed"):
+            merged["completed"] = True
+        out.append(merged)
+    return out
+
+
 def games_in_app_week(season, app_week, games_raw):
     """The half of a CFBD week that belongs to one app week."""
     return [g for g in (games_raw or []) if in_app_week(season, app_week, g)]
