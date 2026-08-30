@@ -236,14 +236,49 @@ def main():
     while dt.datetime.now(dt.timezone.utc) - started < MAX_SHIFT:
         now = dt.datetime.now(dt.timezone.utc)
 
-        # Renew before it expires — see TOKEN_EVERY. Deliberately NOT in a
-        # try: a shift that cannot authenticate has nothing to offer, and
+        # Renew before it expires — see TOKEN_EVERY.
+        #
+        # **A RENEWAL THAT CANNOT REACH GOOGLE IS NOT A SHIFT THAT CANNOT
+        # AUTHENTICATE.** This was deliberately left bare, on the reasoning
+        # that "a shift that cannot authenticate has nothing to offer, and
         # failing here is far better than the silent 401 death this
-        # replaces.
+        # replaces". That is right about CREDENTIALS and wrong about the
+        # NETWORK, and the difference killed a shift at 00:14Z on Aug 30
+        # 2026 — the fourth death of the opening weekend:
+        #
+        #   tick 62: 4 live, 3 final — next in 60s
+        #   URLError: [Errno 8] nodename nor servname provided, or not known
+        #
+        # A DNS lookup failed for the twenty seconds this call happened to
+        # land in. The key was fine, the token still had fifteen minutes on
+        # it, and four games were being played. Logan noticed because the
+        # app told him the scores were behind.
+        #
+        # That machine's connection dropped repeatedly all evening — the
+        # same log carries "No route to host", handshake timeouts and three
+        # more DNS failures, every one of them survived because the code
+        # around them expects a flaky network. This call did not.
+        #
+        # So it retries, and only a renewal that keeps failing ends the
+        # shift. The token is renewed at 45 minutes on a 60-minute expiry,
+        # so there is a quarter of an hour of headroom to spend — far more
+        # than the tick or two this takes.
         if now - token_minted >= TOKEN_EVERY:
-            token = access_token(key)
-            token_minted = now
-            print(f"  token renewed at {now:%H:%M}Z")
+            try:
+                token = access_token(key)
+                token_minted = now
+                failures = 0
+                print(f"  token renewed at {now:%H:%M}Z")
+            except Exception as e:
+                failures += 1
+                print(f"  token renewal failed ({failures}/"
+                      f"{MAX_TICK_FAILURES}): {e}", flush=True)
+                if failures >= MAX_TICK_FAILURES:
+                    print("  cannot renew the token — ending the shift so "
+                          "the next scheduled run can pick it up")
+                    return
+                time.sleep(LIVE_INTERVAL)
+                continue
         try:
             games = fbs_only(
                 cfbd_get("/games", cfbd, year=season,
