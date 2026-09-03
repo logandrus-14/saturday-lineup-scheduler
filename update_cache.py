@@ -1092,10 +1092,33 @@ def notify_kickoffs(token, project, season, week, slate, now):
 
             title = f"{game.get('awayTeam')} @ {game.get('homeTeam')}"
             for uid in took:
+                # ⚠️ ONE KICKOFF PUSH PER PERSON PER GAME, ACROSS ALL THEIR
+                # GROUPS. The de-dupe above names the GROUP and the game,
+                # which is right for the event — each group is a different
+                # split and a separate thing to say. It is wrong for the
+                # phone.
+                #
+                # Logan and Ty are in four groups each. Without this, one
+                # kickoff of one pick they share sends them four
+                # near-identical pushes with the same title, and a seven-pick
+                # Saturday is twenty-eight. The people most invested in the
+                # app would be the ones it spammed, which is how an app gets
+                # muted — and a muted phone is worth less than no
+                # notification at all.
+                #
+                # Found by reading this before switching KICKOFF alerts on
+                # for the first time, rather than by shipping it and hearing
+                # about it on a Saturday.
+                ukey = notify.dedupe_key(
+                    "kickoff-user", uid, f"{season}_{week}_{game_id}")
+                if notify.already_sent(lambda p: fs_get(token, p), ukey):
+                    continue
                 for dev, _ in notify.devices_for(
                         lambda p: fs_list(token, p), uid):
                     notify.send_to_token(token, project, dev, title, body,
                                          route="/gameday")
+                notify.record_sent(
+                    lambda p, f: _fs_patch(token, p, f), ukey, "kickoff", uid)
             notify.record_sent(
                 lambda p, f: _fs_patch(token, p, f), key, "kickoff", gid)
             sent += 1

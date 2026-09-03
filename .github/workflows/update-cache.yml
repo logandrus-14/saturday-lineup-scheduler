@@ -30,12 +30,29 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
           APNS_KEY_P8: ${{ secrets.APNS_KEY_P8 }}
-          # Line-move and kickoff notifications are OFF until they have met a
-          # real Saturday. Uncomment one to turn that path on — and do it in
-          # live-refresh.yml as well. Both jobs send, so a flag set in one
-          # place only works on the days that job happens to run.
+          # ⚠️ KICKOFF ALERTS ARE ON, LINE MOVES ARE NOT — Sep 2 2026.
+          #
+          # Both were held off until they had met a real Saturday. Opening
+          # weekend was that Saturday, so the reason for holding kickoffs
+          # has expired: it is the moment this app is built around, and it
+          # had always happened silently. Logan asked for it in build 36.
+          #
+          # Turned on in BOTH jobs, which is the trap this comment has
+          # always carried: each sends, so a flag set in one place only
+          # works on the days that job happens to run.
+          #
+          # Before switching it on, notify_kickoffs gained a per-PERSON
+          # per-game cap. Its de-dupe names the group, which is right for
+          # the event and wrong for the phone — somebody in four groups got
+          # four near-identical pushes for one kickoff, and a seven-pick
+          # Saturday would have been twenty-eight.
+          #
+          # LINE MOVES STAY OFF. It has still never met a live Saturday,
+          # and it is the noisier of the two by far — a line that moves
+          # half a point is not news, and this is exactly the path the flag
+          # was invented to hold back.
           # NOTIFY_LINE_MOVES: '1'
-          # NOTIFY_KICKOFFS: '1'
+          NOTIFY_KICKOFFS: '1'
           # ON since Aug 20 2026, once build 19 was approved and out.
           # Week 1 is Labor Day ONLY from here; the preseason is its own
           # slate. Anybody still on a build that predates the preseason
