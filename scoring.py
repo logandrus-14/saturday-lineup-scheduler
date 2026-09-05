@@ -218,6 +218,47 @@ def apply_scoreboard(games_raw, scoreboard):
     return out
 
 
+def carry_live_forward(games_raw, prior_games):
+    """Never publish a live field emptier than the one already cached.
+
+    **THE FAILURE THIS EXISTS TO STOP, seen live on Sep 5 2026.** The
+    `/scoreboard` call in `update_cache` is wrapped in a try/except that
+    prints "scoreboard skipped" and carries on. Carrying on means writing
+    the raw `/games` rows — and `/games` reports `homePoints: null`,
+    `period: null`, `clock: null` for anything still being played. So one
+    flaky scoreboard call did not merely fail to add live scores, it
+    ERASED the ones already published: seventeen games in progress went to
+    a blank score across every phone at once, mid-afternoon, while the
+    finished games kept theirs and made it look like the app had broken
+    rather than the feed.
+
+    A run that learns nothing new must publish what it already had. Only
+    empty fields are filled, so a real update always wins, and `completed`
+    is one-way for the same reason it is in [apply_scoreboard]: a game that
+    has finished cannot un-finish because a later feed forgot about it.
+    """
+    prior = {}
+    for g in (prior_games or []):
+        if g.get("id") is not None:
+            prior[g["id"]] = g
+
+    out = []
+    for g in (games_raw or []):
+        old = prior.get(g.get("id"))
+        if not old:
+            out.append(g)
+            continue
+        merged = dict(g)
+        for key in ("homePoints", "awayPoints", "period", "clock",
+                    "homeLineScores", "awayLineScores"):
+            if merged.get(key) is None and old.get(key) is not None:
+                merged[key] = old[key]
+        if old.get("completed"):
+            merged["completed"] = True
+        out.append(merged)
+    return out
+
+
 def games_in_app_week(season, app_week, games_raw):
     """The half of a CFBD week that belongs to one app week."""
     return [g for g in (games_raw or []) if in_app_week(season, app_week, g)]

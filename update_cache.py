@@ -32,8 +32,8 @@ import urllib.request
 # Up here it fails at import instead of at the moment of sending, and
 # test_notification_flags.py asserts it is present.
 from scoring import (apply_scoreboard, build_slate,  # noqa: E402
-                     cfbd_week_for, fbs_only, games_in_app_week,
-                     week_zero_ends_at)
+                     carry_live_forward, cfbd_week_for, fbs_only,
+                     games_in_app_week, week_zero_ends_at)
 
 PROJECT = "saturday-lineup"
 CFBD = "https://api.collegefootballdata.com"
@@ -1597,6 +1597,28 @@ def _season_placing(token, season, uid, group_id=None):
     return (ahead + 1, len(points))
 
 
+def cached_games(token, season, weeks):
+    """Every game row already published for these app weeks, flattened.
+
+    Read before writing so a run can never publish a live field emptier
+    than the one it is replacing — see scoring.carry_live_forward. Costs
+    one Firestore read per week and buys the whole board its floor.
+    """
+    out = []
+    for week in weeks:
+        try:
+            doc = fs_get(token, f"cache/slate_{season}_{week}")
+        except Exception as e:
+            print(f"  prior slate_{season}_{week} unreadable: {e}")
+            continue
+        if not doc:
+            continue
+        raw = doc.get("fields", {}).get("gamesJson", {}).get("stringValue")
+        if raw:
+            out.extend(json.loads(raw))
+    return out
+
+
 def write_season_standings(token, season, through_week):
     from scoring import build_slate, weekly_points
 
@@ -1913,11 +1935,24 @@ def main():
                                   classification="fbs"))
         # Live scores live on /scoreboard, not /games — see
         # scoring.apply_scoreboard for what that cost on opening day.
+        scoreboard_ok = True
         try:
             games = apply_scoreboard(
                 games, cfbd_get("/scoreboard", cfbd, classification="fbs"))
         except Exception as e:
-            print(f"  scoreboard skipped: {e}")
+            scoreboard_ok = False
+            print(f"  ⚠️  SCOREBOARD SKIPPED — live scores come from the "
+                  f"previous cache this run: {e}")
+        # ALWAYS, not just when the scoreboard failed. `/games` carries
+        # nulls for anything in progress, so any row it did not improve
+        # would otherwise regress whatever is already published — which is
+        # how seventeen live games went blank at once on Sep 5 2026. See
+        # scoring.carry_live_forward.
+        games = carry_live_forward(games, cached_games(token, season,
+                                                       [0, 1] if cfbd_wk == 1
+                                                       else [week]))
+        if not scoreboard_ok:
+            print("  live scores held at their last known values")
         lines = cfbd_get("/lines", cfbd, year=season, week=cfbd_wk,
                          seasonType="regular")
     except urllib.error.HTTPError as e:
