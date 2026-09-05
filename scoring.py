@@ -208,6 +208,14 @@ def apply_scoreboard(games_raw, scoreboard):
         for key in ("period", "clock"):
             if live.get(key) is not None:
                 merged[key] = live[key]
+        # WHO HAS THE BALL, for the possession marker on Game Day. Only the
+        # scoreboard knows this and only while a TV feed is attached — 13 of
+        # 17 live games carried it when this was added, so the app has to
+        # read a missing value as "not shown" and never as "away team".
+        # `situation` ("2nd & 2 at AUB 41") rides along for free.
+        for key in ("possession", "situation"):
+            if live.get(key) is not None:
+                merged[key] = live[key]
         # NEVER UN-FINISH A GAME. `/games` backfills `completed` eventually
         # and the scoreboard drops finished games from its window, so the
         # merge has to be one-way: either source saying final makes it
@@ -250,6 +258,7 @@ def carry_live_forward(games_raw, prior_games):
             continue
         merged = dict(g)
         for key in ("homePoints", "awayPoints", "period", "clock",
+                    "possession", "situation",
                     "homeLineScores", "awayLineScores"):
             if merged.get(key) is None and old.get(key) is not None:
                 merged[key] = old[key]
