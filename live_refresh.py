@@ -38,12 +38,12 @@ import urllib.error
 import urllib.request
 
 from update_cache import (  # noqa: E402
-    FS, PARENT, QuotaExhausted, access_token, cfbd_get, current_season,
-    current_week, fs_get, opening_week_split_on, record_run,
+    FS, PARENT, QuotaExhausted, access_token, cached_games, cfbd_get,
+    current_season, current_week, fs_get, opening_week_split_on, record_run,
     send_notifications, write_boards, write_global_standings,
 )
-from scoring import (apply_scoreboard, cfbd_week_for,  # noqa: E402
-                     fbs_only, games_in_app_week, build_slate)
+from scoring import (apply_scoreboard, carry_live_forward,  # noqa: E402
+                     cfbd_week_for, fbs_only, games_in_app_week, build_slate)
 
 # Stop before GitHub's 6h job limit so the shift ends cleanly rather than
 # being killed mid-write.
@@ -230,6 +230,12 @@ def main():
     # Zero so the first tick publishes: a shift that starts right after
     # somebody joins should not wait half an hour to show them.
     global_written = dt.datetime.fromtimestamp(0, dt.timezone.utc)
+    # THE FLOOR UNDER EVERY WRITE THIS SHIFT MAKES — see the tick below and
+    # scoring.carry_live_forward. Seeded from what is already published,
+    # because a scoreboard failure on tick ONE would otherwise have nothing
+    # to fall back to and would blank the board on the way in.
+    published = cached_games(token, season,
+                             [0, 1] if cfbd_week_for(week) == 1 else [week])
     print(f"shift start {started:%Y-%m-%d %H:%M}Z — {season} week {week}, "
           f"{len(lines)} line records reused")
 
@@ -295,7 +301,9 @@ def main():
                     games, cfbd_get("/scoreboard", cfbd,
                                     classification="fbs"))
             except Exception as e:
-                print(f"  scoreboard skipped: {e}")
+                print(f"  ⚠️  SCOREBOARD SKIPPED — holding the last known "
+                      f"scores rather than publishing blanks: {e}",
+                      flush=True)
         except urllib.error.HTTPError as e:
             if e.code == 429:
                 raise QuotaExhausted() from e
@@ -341,6 +349,17 @@ def main():
                 return
             time.sleep(LIVE_INTERVAL)
             continue
+
+        # ⚠️ "A STALE SCORE BEATS NO REFRESH" — THE COMMENT ABOVE WAS RIGHT
+        # AND THE CODE DID NOT DO IT. `/games` reports null points, period
+        # and clock for anything in progress, so a skipped scoreboard did
+        # not leave a stale score: it published a BLANK one over the good
+        # one. On Sep 5 2026 that emptied every live game on every phone,
+        # twice, while the finished games kept their scores and made it look
+        # like the app had broken. Only fields the new rows left empty are
+        # filled, so a real update always wins.
+        games = carry_live_forward(games, published)
+        published = games
 
         # A tick that got its data resets the run — MAX_TICK_FAILURES counts
         # CONSECUTIVE misses, because an afternoon with a dozen scattered
