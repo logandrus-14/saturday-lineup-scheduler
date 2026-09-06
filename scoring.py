@@ -33,6 +33,10 @@ SLOT_POINTS = {
     "kicker": 1,
 }
 
+# 7+6+5+4+3+2+1. Derived rather than written down, so it cannot drift from
+# the table above the way a second copy of a rule always eventually does.
+WEEKLY_MAX_POINTS = sum(SLOT_POINTS.values())
+
 
 def _as_float(value):
     if value is None:
@@ -330,6 +334,57 @@ def did_cover(game, picked_team):
     if picked_team == game.get("homeTeam"):
         return home_margin > -spread
     return -home_margin > spread
+
+
+def week_is_complete(games):
+    """Every game on this week's slate has finished."""
+    return bool(games) and all(g.get("status") == "final" for g in games)
+
+
+def weekly_lost(picks, games):
+    """The points a lineup has DEFINITIVELY dropped in one week.
+
+    **WHY THIS IS NOT SIMPLY "28 MINUS WHAT YOU WON".** A week in progress
+    has points that are neither won nor lost yet, and charging them as
+    losses is the bug this exists to end: on Sep 5 2026 the global board
+    showed Oakley +16 while Game Day showed him +21, and Game Day was
+    right. He had 22 banked, one point missed, and five still being played
+    — the season board charged those five against him.
+
+    **AND WHY IT IS EXACTLY THAT ONCE THE WEEK IS OVER.** The first version
+    of this counted only settled misses, full stop, and a test caught what
+    that would have done: somebody who never picked at all has no settled
+    misses, so they would have been charged NOTHING and finished above
+    everybody who played and lost. Logan settled this rule in the morning
+    of the same day — *"people that are genuinely trying should not be
+    penalized more than someone that never shows up"* — and a no-show is
+    charged the full 28.
+
+    So the line is drawn at whether the week can still change:
+
+      * week finished → every one of the 28 points has been decided, and
+        anything not won was lost. Unfilled slots included.
+      * week in progress → only a pick whose game is FINAL and did not
+        cover has actually cost anything.
+
+    Which makes `won - lost` equal `2 x won - 28` on every completed week,
+    and honest on the one being played.
+    """
+    if week_is_complete(games):
+        return WEEKLY_MAX_POINTS - weekly_points(picks, games)
+
+    games_by_id = {g["id"]: g for g in games}
+    total = 0
+    for slot, pick in (picks or {}).items():
+        points = SLOT_POINTS.get(slot)
+        if points is None:
+            continue
+        game = games_by_id.get(str(pick.get("gameId")))
+        if game is None:
+            continue
+        if did_cover(game, pick.get("team")) is False:
+            total += points
+    return total
 
 
 def weekly_points(picks, games):

@@ -1620,7 +1620,7 @@ def cached_games(token, season, weeks):
 
 
 def write_season_standings(token, season, through_week):
-    from scoring import build_slate, weekly_points
+    from scoring import build_slate, weekly_lost, weekly_points
 
     # One slate per week, shared across every group.
     slates = {}
@@ -1666,7 +1666,7 @@ def write_season_standings(token, season, through_week):
         for uid in members:
             if not uid:
                 continue
-            points = picks_made = 0
+            points = lost = picks_made = 0
             for week, games in slates.items():
                 if (uid, week) not in lineups:
                     doc = fs_get(token, f"users/{uid}/lineups/{season}_{week}")
@@ -1683,8 +1683,14 @@ def write_season_standings(token, season, through_week):
                     }
                 picks = lineups[(uid, week)]
                 points += weekly_points(picks, games)
+                lost += weekly_lost(picks, games)
                 picks_made += len(picks)
-            totals[uid] = {"points": points, "picksMade": picks_made}
+            # `lost` is what makes a HALF-PLAYED week readable. See
+            # scoring.weekly_lost: a season score of `won - lost` charges
+            # only what has actually been decided, and still equals
+            # `2 x won - 28 x weeks` once every game is final.
+            totals[uid] = {"points": points, "pointsLost": lost,
+                           "picksMade": picks_made}
 
         # Read the standings we're about to replace, so we can tell who
         # actually moved. Done before the write, obviously, and treated as
@@ -1770,7 +1776,7 @@ def write_global_standings(token, season, through_week, slates, lineups):
     group costs no extra reads here; only the people outside every group
     are new.
     """
-    from scoring import weekly_points
+    from scoring import weekly_lost, weekly_points
 
     in_group = set()
     for group in fs_list(token, "groups"):
@@ -1806,7 +1812,7 @@ def write_global_standings(token, season, through_week, slates, lineups):
     for uid in walk:
         fields = profiles.get(uid, {})
 
-        points = picks_made = 0
+        points = lost = picks_made = 0
         has_lineup = False
         # BEFORE ANYTHING IS SCORED there are no slates to walk, and
         # falling back to group membership here was the original bug in
@@ -1842,6 +1848,7 @@ def write_global_standings(token, season, through_week, slates, lineups):
             if games is None:
                 continue  # no slate for this week yet — presence only
             points += weekly_points(picks, games)
+            lost += weekly_lost(picks, games)
             picks_made += len(picks)
 
         if not has_lineup and uid not in in_group:
@@ -1849,6 +1856,10 @@ def write_global_standings(token, season, through_week, slates, lineups):
 
         rows[uid] = {
             "points": points,
+            # See scoring.weekly_lost. Without this the board charges a
+            # full 28 for a week still being played, which is how Oakley
+            # read +16 here and +21 on Game Day on Sep 5 2026.
+            "pointsLost": lost,
             "picksMade": picks_made,
             "name": display_name_from(fields),
         }
