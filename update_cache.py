@@ -1229,14 +1229,49 @@ def notify_rank_changes(token, project, season, week, gid, old, new,
     return sent
 
 
+# How long a fresh nudge is left to nudge_function before this steps in.
+# The function answers in seconds; five minutes is not a delay anybody
+# waits through, it is proof the function did not run.
+NUDGE_FUNCTION_GRACE = dt.timedelta(minutes=5)
+
+# How long a CLAIMED nudge is left alone. A claim with no `sentAt` after this
+# long means the function died halfway through sending, and delivering again
+# is better than a nudge that silently never arrives — even though a few
+# people who already got it will get it twice.
+NUDGE_CLAIM_EXPIRY = dt.timedelta(minutes=15)
+
+
+def nudge_waiting_on_function(fields, now):
+    """Whether to leave this request to nudge_function for now.
+
+    **WHY THE SCHEDULER DOES NOT JUST SEND IT TOO.** Both would deliver,
+    and everybody in the group would be nudged twice. The function claims
+    a request by stamping `claimedAt` in a transaction before it sends, so
+    this has two things to respect: a request too new for the function to
+    have had its go, and a claim too recent to be a crash.
+    """
+    def stamp(name):
+        raw = fields.get(name, {}).get("timestampValue")
+        return (dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if raw else None)
+
+    requested = stamp("requestedAt")
+    if requested and now - requested < NUDGE_FUNCTION_GRACE:
+        return True
+    claimed = stamp("claimedAt")
+    if claimed and now - claimed < NUDGE_CLAIM_EXPIRY:
+        return True
+    return False
+
+
 def deliver_nudges(token, project, season, week):
     """Send the reminders a COMMISSIONER asked for.
 
     The app cannot send a push itself -- that needs a server key, and a key
     inside an app binary is a key anybody can extract. So a commissioner's
-    tap writes groups/{gid}/nudges/{season}_{week}, and this delivers it on
-    the next run: inside a minute during a live shift, longer on a quiet
-    weekday, which is why the button promises "shortly" and not "now".
+    tap writes groups/{gid}/nudges/{season}_{week}, and since Sep 11 2026
+    nudge_function delivers it within seconds. This is the BACKUP: it only
+    delivers a request the function has not, once it has had its chance.
 
     `sentAt` on the request is the de-dupe, in the same spirit as the rest
     of this file -- the marker names the EVENT, not the moment. The security
@@ -1260,6 +1295,12 @@ def deliver_nudges(token, project, season, week):
         # Checked every run, and this loop runs every 60 seconds during a
         # shift -- without it one nudge would be re-sent three hundred times.
         if fields.get("sentAt", {}).get("timestampValue"):
+            continue
+        # THE BACKUP, NOT THE SENDER, since Sep 11 2026. nudge_function
+        # delivers a request the moment it is written; this only picks up
+        # what that missed. See nudge_waiting_on_function for the two
+        # windows it respects.
+        if nudge_waiting_on_function(fields, dt.datetime.now(dt.timezone.utc)):
             continue
 
         uids = [v.get("stringValue") for v in
