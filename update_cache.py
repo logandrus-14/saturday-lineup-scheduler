@@ -31,9 +31,10 @@ import urllib.request
 #
 # Up here it fails at import instead of at the moment of sending, and
 # test_notification_flags.py asserts it is present.
-from scoring import (apply_scoreboard, build_slate,  # noqa: E402
-                     carry_live_forward, cfbd_week_for, fbs_only,
-                     games_in_app_week, week_zero_ends_at)
+from scoring import (SLOT_POINTS, apply_scoreboard,  # noqa: E402
+                     blank_slot_deadline, build_slate, carry_live_forward,
+                     cfbd_week_for, fbs_only, games_in_app_week,
+                     week_zero_ends_at)
 
 PROJECT = "saturday-lineup"
 CFBD = "https://api.collegefootballdata.com"
@@ -479,6 +480,21 @@ def filled_count(lineup_doc):
     return len(slots_of(lineup_doc))
 
 
+def empty_points(lineup_doc):
+    """The points riding on this member's UNFILLED slots.
+
+    Published on the board once the week's blank-slot deadline has passed
+    (see scoring.blank_slot_deadline), so a phone can charge an empty slot
+    exactly as the season standings do without being able to read anybody
+    else's lineup. The board already publishes HOW MANY slots are filled;
+    this says what those empty slots were worth, and only once they are
+    already costing points — at which point the season score reveals the
+    same number anyway.
+    """
+    filled = set(slots_of(lineup_doc))
+    return sum(pts for slot, pts in SLOT_POINTS.items() if slot not in filled)
+
+
 def started_picks(lineup_doc, now):
     """Only the picks whose games have kicked off, as plain values."""
     slots = slots_of(lineup_doc)
@@ -504,6 +520,17 @@ def write_boards(token, season, week):
     lineups = {}  # uid -> doc, so someone in two groups is read once
     written = 0
 
+    # Whether empty slots are costing points yet. One cached-slate read per
+    # call, and a failure to read it means "not yet" — the safe direction,
+    # since a missing charge corrects itself on the next tick and a wrong
+    # one would show somebody a loss they have not had.
+    try:
+        deadline = blank_slot_deadline(cached_games(token, season, [week]))
+    except Exception as e:
+        print(f"  blank-slot deadline unreadable: {e}")
+        deadline = None
+    charging_blanks = deadline is not None and now >= deadline
+
     for group in fs_list(token, "groups"):
         gid = group["name"].rsplit("/", 1)[-1]
         members = [
@@ -514,6 +541,7 @@ def write_boards(token, season, week):
 
         board = {}
         counts = {}
+        empties = {}
         for uid in members:
             if not uid:
                 continue
@@ -524,6 +552,8 @@ def write_boards(token, season, week):
             if picks:
                 board[uid] = picks
             counts[uid] = filled_count(lineups[uid])
+            if charging_blanks:
+                empties[uid] = empty_points(lineups[uid])
 
         body = {"fields": {
             "json": {"stringValue": json.dumps(board)},
@@ -531,6 +561,11 @@ def write_boards(token, season, week):
             # lineup, so a missing uid means "not in this group that week"
             # rather than "hasn't picked". The screens tell those apart.
             "counts": {"stringValue": json.dumps(counts)},
+            # Only once blanks are being charged, and absent before — so a
+            # phone reading an older board, or a board from before the
+            # deadline, charges nothing, which is correct for both.
+            **({"emptyPoints": {"stringValue": json.dumps(empties)}}
+               if charging_blanks else {}),
             "season": {"integerValue": str(season)},
             "week": {"integerValue": str(week)},
             "updatedAt": {"timestampValue":
@@ -1708,6 +1743,7 @@ def write_season_standings(token, season, through_week):
             if not uid:
                 continue
             points = lost = picks_made = 0
+            prior_points = prior_lost = 0
             for week, games in slates.items():
                 if (uid, week) not in lineups:
                     doc = fs_get(token, f"users/{uid}/lineups/{season}_{week}")
@@ -1723,14 +1759,30 @@ def write_season_standings(token, season, through_week):
                         for name, v in slots.items()
                     }
                 picks = lineups[(uid, week)]
-                points += weekly_points(picks, games)
-                lost += weekly_lost(picks, games)
+                won_w = weekly_points(picks, games)
+                lost_w = weekly_lost(picks, games)
+                points += won_w
+                lost += lost_w
                 picks_made += len(picks)
+                if week < through_week:
+                    prior_points += won_w
+                    prior_lost += lost_w
             # `lost` is what makes a HALF-PLAYED week readable. See
             # scoring.weekly_lost: a season score of `won - lost` charges
             # only what has actually been decided, and still equals
             # `2 x won - 28 x weeks` once every game is final.
+            #
+            # `prior*` is where each member STARTED this week — every week
+            # before the current one. Game Day adds its own live week on top
+            # of it, on the phone, every minute. Logan, Sep 11 2026:
+            # "everyone should show the points they ended with last week not
+            # 0 again ... If someone had -7 they would show -7 and then
+            # update as the new games go in." Published rather than derived
+            # on the phone, because the phone cannot read other members'
+            # past lineups and the live week must not wait on this job.
             totals[uid] = {"points": points, "pointsLost": lost,
+                           "priorPoints": prior_points,
+                           "priorLost": prior_lost,
                            "picksMade": picks_made}
 
         # Read the standings we're about to replace, so we can tell who
