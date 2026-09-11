@@ -336,12 +336,55 @@ def did_cover(game, picked_team):
     return -home_margin > spread
 
 
-def week_is_complete(games):
-    """Every game on this week's slate has finished."""
-    return bool(games) and all(g.get("status") == "final" for g in games)
+def _kickoffs(games):
+    out = []
+    for g in games or []:
+        start = g.get("startDate")
+        if start:
+            out.append(dt.datetime.fromisoformat(start.replace("Z", "+00:00")))
+    return out
 
 
-def weekly_lost(picks, games):
+# Saturday is judged on a FIXED UTC-5, not on the viewer's clock and not on
+# UTC. UTC is wrong in the obvious place: a Friday 8pm Eastern kickoff is
+# 00:00Z SATURDAY, and week 1 of 2026 had two of them. A fixed -5 is right
+# all season, across the November clock change too: it is an hour off
+# during daylight time, and the only games that hour could misfile would
+# start between midnight and 1am Eastern on a Saturday, which do not exist.
+# Mirrored exactly in seasonLostForWeek, which is why it is arithmetic
+# rather than a timezone database Dart does not have.
+_SATURDAY_OFFSET = dt.timedelta(hours=-5)
+_SATURDAY = 5  # datetime.weekday(): Monday is 0
+
+
+def blank_slot_deadline(games):
+    """When an EMPTY slot starts costing points: the week's first SATURDAY
+    kickoff.
+
+    **LOGAN'S CALL, Sep 11 2026**, over two alternatives he was shown:
+    charging at the week's LAST kickoff (when a slot genuinely can no longer
+    be filled) left every no-show on +0 from Thursday to Monday night and
+    then dropped them to -28 all at once. Saturday's first kickoff is when
+    the week actually starts for most people, so it is when a missing
+    lineup starts to show.
+
+    **THE CONSEQUENCE, accepted knowingly:** somebody with five picks and
+    two empty slots at noon Saturday is charged for those two even though
+    a 5pm game could still fill them. The charge disappears the moment
+    they fill the slot. It reads as "you are losing these", which is true.
+
+    A week with no Saturday game at all (bowl season) falls back to its last
+    kickoff, when nothing can be filled any more. Null for an empty slate.
+    """
+    kicks = _kickoffs(games)
+    if not kicks:
+        return None
+    saturdays = [k for k in kicks
+                 if (k + _SATURDAY_OFFSET).weekday() == _SATURDAY]
+    return min(saturdays) if saturdays else max(kicks)
+
+
+def weekly_lost(picks, games, now=None):
     """The points a lineup has DEFINITIVELY dropped in one week.
 
     **WHY THIS IS NOT SIMPLY "28 MINUS WHAT YOU WON".** A week in progress
@@ -351,39 +394,46 @@ def weekly_lost(picks, games):
     right. He had 22 banked, one point missed, and five still being played
     — the season board charged those five against him.
 
-    **AND WHY IT IS EXACTLY THAT ONCE THE WEEK IS OVER.** The first version
-    of this counted only settled misses, full stop, and a test caught what
-    that would have done: somebody who never picked at all has no settled
-    misses, so they would have been charged NOTHING and finished above
-    everybody who played and lost. Logan settled this rule in the morning
-    of the same day — *"people that are genuinely trying should not be
-    penalized more than someone that never shows up"* — and a no-show is
+    **AND WHY A BLANK SLOT IS STILL CHARGED.** A first pass counted only
+    settled misses, and a test caught what that would have done: somebody
+    who never picked has no misses, so they would have been charged NOTHING
+    and finished above everybody who played and lost. Logan settled that
+    rule the same morning — *"people that are genuinely trying should not
+    be penalized more than someone that never shows up"* — so a no-show is
     charged the full 28.
 
-    So the line is drawn at whether the week can still change:
+    Two clocks, then, and they are different on purpose:
 
-      * week finished → every one of the 28 points has been decided, and
-        anything not won was lost. Unfilled slots included.
-      * week in progress → only a pick whose game is FINAL and did not
-        cover has actually cost anything.
+      * **a PICK** costs you only once its game is FINAL and did not cover.
+        Until then it is still winnable.
+      * **an EMPTY SLOT** costs you from the week's first SATURDAY kickoff
+        — see blank_slot_deadline for why that moment and not another.
 
-    Which makes `won - lost` equal `2 x won - 28` on every completed week,
-    and honest on the one being played.
+    Once every game is final both clocks have run and `won + lost == 28`,
+    so `won - lost` equals `2 x won - 28` exactly.
     """
-    if week_is_complete(games):
-        return WEEKLY_MAX_POINTS - weekly_points(picks, games)
-
     games_by_id = {g["id"]: g for g in games}
     total = 0
+    filled = set()
+
     for slot, pick in (picks or {}).items():
         points = SLOT_POINTS.get(slot)
         if points is None:
             continue
+        filled.add(slot)
         game = games_by_id.get(str(pick.get("gameId")))
         if game is None:
             continue
         if did_cover(game, pick.get("team")) is False:
             total += points
+
+    deadline = blank_slot_deadline(games)
+    when = now or dt.datetime.now(dt.timezone.utc)
+    if deadline is not None and when >= deadline:
+        for slot, points in SLOT_POINTS.items():
+            if slot not in filled:
+                total += points
+
     return total
 
 

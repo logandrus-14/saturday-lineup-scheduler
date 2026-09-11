@@ -16,7 +16,9 @@ losses. Logan spotted it from the two screens disagreeing.
 
 import sys
 
-from scoring import weekly_lost, weekly_points, week_is_complete
+import datetime as dt
+
+from scoring import blank_slot_deadline, weekly_lost, weekly_points
 
 failures = 0
 
@@ -28,9 +30,21 @@ def check(label, ok):
         failures += 1
 
 
-def game(gid, home, away, spread, hs=None, as_=None, status="final"):
+# THURSDAY by default, so a fixture with a game still to come has not
+# reached Saturday yet and blank slots are not being charged — which keeps
+# every pick-focused check below about PICKS. The Saturday fixtures name
+# their kickoffs explicitly.
+PAST = "2026-09-03T23:00:00.000Z"        # Thu 7pm Eastern
+SAT_NOON = "2026-09-05T16:00:00.000Z"    # Sat noon Eastern
+FRI_8PM = "2026-09-05T00:00:00.000Z"     # Fri 8pm Eastern — SATURDAY in UTC
+FUTURE = "2099-09-05T16:00:00.000Z"
+
+
+def game(gid, home, away, spread, hs=None, as_=None, status="final",
+         start=PAST):
     return {"id": gid, "homeTeam": home, "awayTeam": away, "spread": spread,
-            "homeScore": hs, "awayScore": as_, "status": status}
+            "homeScore": hs, "awayScore": as_, "status": status,
+            "startDate": start}
 
 
 print(__doc__.strip().splitlines()[0])
@@ -45,6 +59,10 @@ GAMES = [
     game("5", "California", "UCLA", -3, 7, 7, status="in_progress"),
     game("6", "LSU", "Clemson", -6, 30, 3, status="in_progress"),
     game("7", "Cincinnati", "Boston College", -6, 34, 15),
+    # A GAME STILL TO COME, so this slate is not LOCKED and these checks
+    # isolate what a PICK costs. Blank-slot charging has its own fixtures
+    # below; mixing the two makes every number here mean two things.
+    game("8", "Later", "Opponent", -3, status="scheduled", start=FUTURE),
 ]
 PICKS = {
     "qb": {"gameId": "1", "team": "Syracuse"},
@@ -85,7 +103,7 @@ check("a finished week accounts for all 28 points", w + l == 28)
 check("and the two formulas agree exactly once it is over",
       w - l == 2 * w - 28)
 
-check("a pick nobody made costs nothing WHILE THE WEEK IS STILL ON",
+check("a pick nobody made costs nothing before Saturday",
       weekly_lost({}, GAMES) == 0)
 
 # THE INVARIANT THAT NEARLY GOT BROKEN. The first version of weekly_lost
@@ -94,14 +112,52 @@ check("a pick nobody made costs nothing WHILE THE WEEK IS STILL ON",
 # and lost. Logan settled this rule the same morning: a no-show is charged
 # the full 28, and a trier can do no worse than -26.
 ALL_DONE = [game(str(i), "H", "A", -3, 30, 0) for i in range(1, 8)]
-check("a week that is over is recognised as over", week_is_complete(ALL_DONE))
+check("a week with no Saturday game charges blanks at its last kickoff",
+      blank_slot_deadline(ALL_DONE) is not None)
 check("a no-show is charged the whole week",
       weekly_lost({}, ALL_DONE) == 28)
 check("and somebody who tried and went 0-for is charged the same 28, "
       "never more", weekly_lost(
           {"qb": {"gameId": "1", "team": "A"}}, ALL_DONE) == 28)
-check("while a live week charges a no-show nothing yet",
-      weekly_lost({}, GAMES) == 0)
+# THE RULE LOGAN CHOSE ON SEP 11: blank slots are charged from the week's
+# first SATURDAY kickoff. Charging at the last kickoff left no-shows on +0
+# until Monday night and then dropped them all at once.
+SATURDAY_UNDERWAY = [
+    game("1", "H", "A", -3, 30, 0, start=SAT_NOON),
+    game("2", "J", "B", -3, status="scheduled", start=FUTURE),
+]
+check("a no-show is charged the moment Saturday kicks off",
+      weekly_lost({}, SATURDAY_UNDERWAY) == 28)
+check("even though a later game could still fill the slot — "
+      "the consequence Logan accepted",
+      weekly_lost({"qb": {"gameId": "2", "team": "J"}},
+                  SATURDAY_UNDERWAY) == 21)
+
+BEFORE_SATURDAY = [
+    game("1", "H", "A", -3, 30, 0),                                # Thursday
+    game("2", "J", "B", -3, status="scheduled", start=FUTURE),
+]
+check("but not on a Thursday, however many Thursday games have gone",
+      weekly_lost({}, BEFORE_SATURDAY) == 0)
+
+# A Friday 8pm Eastern kickoff is 00:00Z SATURDAY. Judging the day in UTC
+# would start charging blanks on Friday night.
+FRIDAY_NIGHT = [
+    game("1", "H", "A", -3, 30, 0, start=FRI_8PM),
+    game("2", "J", "B", -3, status="scheduled", start=FUTURE),
+]
+check("a Friday night game is not Saturday, even though UTC says it is",
+      weekly_lost({}, FRIDAY_NIGHT) == 0)
+
+check("a pick is still only charged when ITS game is final",
+      weekly_lost({"qb": {"gameId": "1", "team": "H"},
+                   **{s: {"gameId": "2", "team": "J"} for s in
+                      ("rb", "wr", "te", "def", "flex", "kicker")}},
+                  SATURDAY_UNDERWAY) == 0)
+
+check("an empty slate has no deadline at all",
+      blank_slot_deadline([]) is None)
+
 check("a game missing from the slate is not a loss",
       weekly_lost({"qb": {"gameId": "nope", "team": "X"}}, GAMES) == 0)
 check("a live game is neither won nor lost",
@@ -121,7 +177,7 @@ check("a live game is neither won nor lost",
 # -miss path is what gets exercised. On a completed week the whole 28 is
 # charged anyway and a push would tell us nothing.
 PUSH = [game("1", "A", "B", -3, 23, 20),
-        game("9", "Y", "Z", -3, 0, 0, status="in_progress")]
+        game("9", "Y", "Z", -3, status="scheduled", start=FUTURE)]
 pick = {"qb": {"gameId": "1", "team": "A"}}
 check("a push wins nothing", weekly_points(pick, PUSH) == 0)
 check("and is charged as a miss, exactly as the old formula charged it",
@@ -131,4 +187,4 @@ print()
 if failures:
     print(f"{failures} check(s) FAILED")
     sys.exit(1)
-print("all 16 checks OK — a half-played week is charged honestly")
+print("all 20 checks OK — a half-played week is charged honestly")
