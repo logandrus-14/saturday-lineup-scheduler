@@ -220,6 +220,13 @@ def apply_scoreboard(games_raw, scoreboard):
         for key in ("possession", "situation"):
             if live.get(key) is not None:
                 merged[key] = live[key]
+        # WHERE TO WATCH IT — "ESPN2", "BTN", "ESPN+". Logan, Sep 12 2026:
+        # "a small note ... on the game card pop ups ... that shows what
+        # channel or service is showing that game." `/games` does not carry
+        # it and `/games/media` would be another call on every run; the
+        # scoreboard already has it for every game in its window, free.
+        if live.get("tv"):
+            merged["tv"] = live["tv"]
         # NEVER UN-FINISH A GAME. `/games` backfills `completed` eventually
         # and the scoreboard drops finished games from its window, so the
         # merge has to be one-way: either source saying final makes it
@@ -261,9 +268,11 @@ def carry_live_forward(games_raw, prior_games):
             out.append(g)
             continue
         merged = dict(g)
+        # `tv` too: the scoreboard drops a game from its window once it is
+        # over, and the channel should stay on the game sheet afterwards.
         for key in ("homePoints", "awayPoints", "period", "clock",
                     "possession", "situation",
-                    "homeLineScores", "awayLineScores"):
+                    "homeLineScores", "awayLineScores", "tv"):
             if merged.get(key) is None and old.get(key) is not None:
                 merged[key] = old[key]
         if old.get("completed"):

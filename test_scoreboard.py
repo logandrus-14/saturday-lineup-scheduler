@@ -77,8 +77,18 @@ check("a scoreboard entry with no points does not blank a known score",
                                     "homeTeam": {}, "awayTeam": {}}]
                        )[0]["homePoints"] == 17)
 
+# WHERE TO WATCH IT (Sep 12 2026): the scoreboard's `tv` rides onto the row.
+with_tv = apply_scoreboard(SCHEDULE, [{"id": 1, "status": "scheduled",
+                                       "tv": "ESPN2",
+                                       "homeTeam": {}, "awayTeam": {}}])
+check("the scoreboard's TV listing reaches the slate",
+      with_tv[0].get("tv") == "ESPN2")
+check("a scoreboard entry with no TV listing adds nothing",
+      "tv" not in apply_scoreboard(SCHEDULE, [{"id": 1, "homeTeam": {},
+                                               "awayTeam": {}}])[0])
+
 print()
 if failures:
     print(f"{failures} check(s) FAILED")
     sys.exit(1)
-print("all 9 checks OK — live scores reach the slate")
+print("all 11 checks OK — live scores and TV listings reach the slate")

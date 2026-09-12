@@ -83,8 +83,14 @@ out = carry_live_forward([BLANK, final], [CACHED, final])
 check("the whole board survives a scoreboard outage",
       out[0]["homePoints"] == 24 and out[1]["homePoints"] == 13)
 
+
+# The channel stays once the scoreboard has moved on from a finished game.
+listed = dict(CACHED, tv="BTN")
+check("a TV listing already published is kept when the feed forgets it",
+      carry_live_forward([BLANK], [listed])[0].get("tv") == "BTN")
+
 print()
 if failures:
     print(f"{failures} check(s) FAILED")
     sys.exit(1)
-print("all 11 checks OK — a scoreboard outage cannot blank the board")
+print("all 12 checks OK — a scoreboard outage cannot blank the board")
