@@ -58,6 +58,9 @@ MAX_TICK_FAILURES = 5
 IDLE_INTERVAL = 5 * 60      # nothing live yet, kickoff still ahead
 # How long before the first kickoff to bother staying awake at all.
 WARMUP = dt.timedelta(hours=1)
+# A shift waits for a kickoff only if it will still be running this long
+# after it — see wait_for_kickoff.
+KICKOFF_COVER = dt.timedelta(minutes=30)
 
 # How often, inside a shift, to republish the GLOBAL board.
 #
@@ -179,6 +182,50 @@ def next_delay(games, now):
     if min(upcoming) - now <= WARMUP:
         return IDLE_INTERVAL
     return None  # nothing for over an hour — let the shift end
+
+
+def wait_for_kickoff(games, now, deadline):
+    """Seconds to sleep before the next kickoff's warm-up, or None to end.
+
+    **A SHIFT THAT IS ALREADY RUNNING IS THE SCARCE THING.** Asked for
+    whenever `next_delay` gives up, i.e. nothing is live and the next
+    kickoff is more than WARMUP away. Before Sep 18 2026 the shift simply
+    ended there — and on that Friday night it threw away TWO shifts that way:
+
+        20:00Z  shift starts; Miami at Wake kicks off at 23:30 — ends in 47s
+        21:21Z  shift starts; still two hours out — ends in 34s
+        23:00Z  the next cron request never arrived (GitHub drops them)
+        23:30Z  kickoff, nothing running
+        00:48Z  a shift finally lands — 78 minutes of 0-0 on every phone
+
+    Logan: *"this has happened multiple times."* Any evening where GitHub
+    drops the one request inside the hour before kickoff looked like that.
+
+    So a shift that will still be alive at the next kickoff WAITS for it,
+    sleeping until WARMUP before and then ticking as usual. Sleeping makes
+    no CFBD call and costs nothing — the scheduler repo is public, and
+    GitHub does not bill a public repository's Actions minutes.
+
+    Only when the next kickoff falls AFTER this shift must end (or there is
+    none) does the shift stand down, because then the next run is the one
+    that has to cover it anyway.
+    """
+    upcoming = []
+    for g in games:
+        if status_of(g) != "scheduled" or not g.get("startDate"):
+            continue
+        start = dt.datetime.fromisoformat(g["startDate"].replace("Z", "+00:00"))
+        if start > now:
+            upcoming.append(start)
+    if not upcoming:
+        return None
+    first = min(upcoming)
+    # A shift that would end within minutes of kickoff covers nothing worth
+    # waiting for — the next run has to be the one at the whistle.
+    if first + KICKOFF_COVER > deadline:
+        return None
+    wake = first - WARMUP
+    return max(0, int((wake - now).total_seconds()))
 
 
 def _counting_slates(token, season, through_week):
@@ -446,8 +493,20 @@ def main():
               flush=True)
 
         if delay is None:
-            print("every game is final (or nothing is close) — ending shift")
-            return
+            wait = wait_for_kickoff(games, now, started + MAX_SHIFT)
+            if wait is None:
+                print("every game is final (or the next kickoff is past this "
+                      "shift) — ending shift")
+                return
+            # Do NOT end: this is the run GitHub actually delivered, and the
+            # next one may not come. See wait_for_kickoff.
+            print(f"  next kickoff is more than {WARMUP} away — waiting "
+                  f"{wait // 60} min without calling CFBD", flush=True)
+            # Never less than a live tick: a wait of 0 would loop straight
+            # back into a CFBD call, and a shift spinning on the API is the
+            # one thing worse than a shift that ended.
+            time.sleep(max(wait, LIVE_INTERVAL))
+            continue
         time.sleep(delay)
 
     print(f"shift limit reached after {ticks} refresh(es); "
