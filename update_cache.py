@@ -1972,6 +1972,158 @@ def write_global_standings(token, season, through_week, slates, lineups):
     _send_write(req)
     print(f"wrote global standings for {len(rows)} player(s)")
 
+    # Trophies ride on the walk that just read every lineup. Last, and
+    # wrapped: a trophy is decoration, the board is not.
+    try:
+        award_trophies(token, season, through_week, slates, lineups,
+                       profiles, list(rows))
+    except Exception as e:
+        print(f"  trophies skipped: {e}")
+
+
+def _stored_trophies(fields):
+    return [v.get("stringValue")
+            for v in fields.get("trophies", {}).get("arrayValue", {})
+            .get("values", [])
+            if v.get("stringValue")]
+
+
+def award_trophies(token, season, through_week, slates, lineups, profiles,
+                   players):
+    """Writes `users/{uid}.trophies` for everybody playing, when it changed.
+
+    **THE SERVER AWARDS TROPHIES FROM BUILD 55 (Sep 18 2026).** Before, the
+    phone worked them out and wrote them onto its own profile — so a
+    groupmate only saw your trophy once you happened to open your trophy
+    case, and a modified app could claim anything. The rules in
+    firestore.rules now refuse a phone writing `trophies`; this is the only
+    writer. The phone still draws its OWN case from the same rules
+    (trophies.dart), and test_trophy_parity.py keeps the two agreeing.
+
+    [slates] and [lineups] are what the standings walk already read, so
+    this costs NO extra reads — one write for anybody whose case actually
+    changed, and nobody else is written to. (The preseason is not in them,
+    and is not a trophy week either: see countsTowardSeason.)
+
+    Also where a PERFECT WEEK is noticed, because this is the one place that
+    sees everybody's finished picks at once — see announce_perfect_weeks.
+    """
+    from trophies import (earned_trophies, perfect_weeks, scored_picks_for,
+                          unfinished_weeks, weeks_in_season)
+
+    if not slates:
+        return
+
+    weeks_in = weeks_in_season(through_week, slates.get(through_week))
+    written = 0
+    perfect_now = {}  # uid -> covered count, for this week's clean sheets
+
+    for uid in players:
+        mine = {}
+        for week in slates:
+            if lineups.get((uid, week)):
+                mine[week] = lineups[(uid, week)]
+
+        picks = []
+        for week, week_picks in mine.items():
+            picks += scored_picks_for(week, week_picks, slates[week])
+        unfinished = unfinished_weeks(mine, slates)
+
+        earned = earned_trophies(picks, weeks_in, unfinished)
+        if through_week in perfect_weeks(picks, unfinished):
+            perfect_now[uid] = sum(1 for p in picks
+                                   if p["week"] == through_week)
+
+        # A profile document is the person's; one that does not exist yet
+        # is left for the app to create, rather than conjured into being
+        # holding nothing but a trophy list.
+        fields = profiles.get(uid)
+        if fields is None or _stored_trophies(fields) == earned:
+            continue
+        _fs_patch(token, f"users/{uid}", {
+            "trophies": {"arrayValue": {
+                "values": [{"stringValue": t} for t in earned]}},
+        }, mask=["trophies"])
+        written += 1
+
+    if written:
+        print(f"  trophies updated for {written} player(s)")
+
+    if perfect_now:
+        try:
+            n = announce_perfect_weeks(token, PROJECT, season, through_week,
+                                       perfect_now, profiles)
+            if n:
+                print(f"  told groupmates about {n} perfect week(s)")
+        except Exception as e:
+            print(f"  perfect week notifications skipped: {e}")
+
+
+def week_label(week):
+    """Mirrors weekLabel in season_weeks.dart."""
+    return {0: "the Preseason", 1: "Opening Week"}.get(week, f"Week {week}")
+
+
+def perfect_week_body(name, covered, week):
+    return f"{name} covered all {covered} picks in {week_label(week)}."
+
+
+def perfect_week_recipients(uid, groups):
+    """Everybody who shares a group with [uid], once each, never [uid].
+
+    [groups] is the `groups` listing. Somebody in two groups with you is
+    told once — a perfect week is one event, however many boards it is on.
+    """
+    mates = set()
+    for group in groups:
+        members = [
+            v.get("stringValue")
+            for v in group.get("fields", {}).get("memberUids", {})
+            .get("arrayValue", {}).get("values", [])
+        ]
+        if uid in members:
+            mates.update(m for m in members if m)
+    mates.discard(uid)
+    return sorted(mates)
+
+
+def announce_perfect_weeks(token, project, season, week, perfect_now,
+                           profiles):
+    """"Logan covered all 7 picks in Week 3." — to his groupmates, once.
+
+    Logan, Sep 17 2026, on the perfect week: it is semi-rare, so it should
+    feel significant. The person who did it gets the celebration in the app;
+    this is the other half — the people who would want to know.
+
+    **Only the week in play, never an old one.** [perfect_now] holds only
+    clean sheets from [week], and only once every pick in them is final (a
+    perfect week has to be over for the person — see trophies.py). So the
+    first run after this ships cannot dig up a perfect week from a fortnight
+    ago and announce it as news.
+
+    De-duped on the person and the week, not on each recipient: one event,
+    one announcement, however many times the loop sees it.
+    """
+    import notify
+
+    groups = fs_list(token, "groups")
+    sent = 0
+    for uid, covered in perfect_now.items():
+        key = notify.dedupe_key("perfect_week", uid, f"{season}_{week}")
+        if notify.already_sent(lambda p: fs_get(token, p), key):
+            continue
+        name = display_name_from(profiles.get(uid, {}))
+        body = perfect_week_body(name, covered, week)
+        for mate in perfect_week_recipients(uid, groups):
+            for dev, _ in notify.devices_for(
+                    lambda p: fs_list(token, p), mate):
+                notify.send_to_token(token, project, dev, "Perfect week 🏆",
+                                     body, route="/leaderboard")
+        notify.record_sent(
+            lambda p, f: _fs_patch(token, p, f), key, "perfect_week", uid)
+        sent += 1
+    return sent
+
 
 def main():
     key = json.loads(os.environ["FIREBASE_SERVICE_ACCOUNT"])
