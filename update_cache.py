@@ -1507,6 +1507,37 @@ def fs_delete(token, path):
             raise
 
 
+def _kickoff_label(start_date):
+    """"7:30 PM" in Eastern, which is how the app prints a kickoff.
+
+    The card is one person's, but the scheduler has no idea where they are.
+    Eastern is the league's clock and the one every broadcast uses, and a
+    time that is an hour out is still recognisably the right game; a time
+    computed in UTC is not.
+    """
+    if not start_date:
+        return ""
+    try:
+        when = dt.datetime.fromisoformat(str(start_date).replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    eastern = when + dt.timedelta(hours=-4)
+    hour = eastern.hour % 12 or 12
+    return f"{hour}:{eastern.minute:02d} {'AM' if eastern.hour < 12 else 'PM'}"
+
+
+def _game_clock(game):
+    """"Q2 8:14" while a game is being played, else empty."""
+    period = game.get("period")
+    clock = game.get("clock")
+    parts = []
+    if period:
+        parts.append(f"Q{period}")
+    if clock:
+        parts.append(str(clock))
+    return " ".join(parts)
+
+
 def push_live_activities(token, season, week, slate, now):
     """Drive everyone's lock-screen card. Returns how many were pushed.
 
@@ -1560,14 +1591,23 @@ def push_live_activities(token, season, week, slate, now):
                 continue
 
             won = lost = playing = to_come = 0
-            for slot, value in slots.items():
+            # YOUR SEVEN, in the card's own words — biggest call first, the
+            # same order the app builds them in. The push has to carry
+            # these: an update replaces the whole content state, so a state
+            # without them empties the strip the reader chose.
+            card_picks = []
+            for slot, value in sorted(
+                    slots.items(),
+                    key=lambda kv: SLOT_POINTS.get(kv[0], 0), reverse=True):
                 points = SLOT_POINTS.get(slot)
                 f = value.get("mapValue", {}).get("fields", {})
                 game = by_id.get(f.get("gameId", {}).get("stringValue", ""))
                 if points is None or game is None:
                     continue
+                team = f.get("team", {}).get("stringValue")
+                covered = did_cover(game, team)
                 if game["status"] == "final":
-                    if did_cover(game, f.get("team", {}).get("stringValue")):
+                    if covered:
                         won += points
                     else:
                         # A push is not points in hand either, and counting
@@ -1577,6 +1617,21 @@ def push_live_activities(token, season, week, slate, now):
                     playing += 1
                 else:
                     to_come += 1
+
+                card_picks.append(live_activity.build_pick(
+                    slot=slot.upper(),
+                    team=team or "",
+                    away_team=game.get("awayTeam") or "",
+                    home_team=game.get("homeTeam") or "",
+                    away_score=game.get("awayScore"),
+                    home_score=game.get("homeScore"),
+                    status=("final" if game["status"] == "final"
+                            else "live" if game["status"] == "in_progress"
+                            else "scheduled"),
+                    covered=covered,
+                    kickoff=_kickoff_label(game.get("startDate")),
+                    clock=_game_clock(game),
+                ))
 
             # The group the app pinned onto this card. Read from the same doc
             # as the token so the two can never disagree about which card is
@@ -1591,6 +1646,7 @@ def push_live_activities(token, season, week, slate, now):
                 # is the default and the shape the card was designed for.
                 style="plusMinus",
                 rank=rank, group_size=size, now=now,
+                picks=card_picks,
             )
 
             status, body = live_activity.send_update(device, state, p8)

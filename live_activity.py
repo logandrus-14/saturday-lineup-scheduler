@@ -50,6 +50,51 @@ WEEKLY_MAX_POINTS = 28
 
 # ── The payload, kept in step with Dart ───────────────────────────────────
 
+def build_pick(
+    slot: str,
+    team: str,
+    away_team: str,
+    home_team: str,
+    away_score,
+    home_score,
+    status: str,
+    covered,
+    kickoff: str,
+    clock: str,
+) -> dict:
+    """Mirrors `liveActivityPick` in Dart. One pick, as the card shows it.
+
+    Pre-formatted, like everything else here — Swift draws strings and does
+    no football arithmetic. `score` and `clock` are empty unless the game is
+    being played: a final game has said what it had to say and an unplayed
+    one has nothing to say.
+    """
+    if status == "final":
+        state = "covered" if covered else "missed"
+    elif status == "live":
+        state = "live_up" if covered else "live_down"
+    else:
+        state = "pending"
+
+    detail = {
+        "covered": "covered",
+        "missed": "missed",
+        "live_up": "covering",
+        "live_down": "short",
+    }.get(state, kickoff)
+
+    live = status == "live"
+    return {
+        "slot": slot,
+        "team": team,
+        "state": state,
+        "detail": detail,
+        "score": (f"{away_team} {away_score or 0} · {home_team} {home_score or 0}"
+                  if live else ""),
+        "clock": clock if live else "",
+    }
+
+
 def build_content_state(
     won_points: int,
     lost_points: int,
@@ -59,6 +104,7 @@ def build_content_state(
     rank: int | None,
     group_size: int | None,
     now: dt.datetime,
+    picks: list | None = None,
 ) -> dict:
     """Mirrors `buildLiveActivityState` in Dart. Pinned by a shared fixture.
 
@@ -98,6 +144,12 @@ def build_content_state(
         "accent": accent,
         "progress": progress,
         "asOf": now.timestamp(),
+        # **THE PUSH HAS TO CARRY THE LINEUP OR THE CARD LOSES IT.** A Live
+        # Activity update REPLACES the whole content state: send a state
+        # without `picks` and the strip the reader chose vanishes a minute
+        # after the app drew it, then comes back the next time they open
+        # the app. Empty list only when there is genuinely nothing.
+        "picks": picks or [],
     }
 
 
