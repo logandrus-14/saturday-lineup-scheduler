@@ -345,6 +345,29 @@ def did_cover(game, picked_team):
     return -home_margin > spread
 
 
+def is_covering(game, picked_team):
+    """Mirrors Game.isCovering: ahead of the spread RIGHT NOW, live or final.
+
+    **Show a live game with this; score one with did_cover.** did_cover is
+    None until a game is final, and on Sep 26 2026 the lock screen card was
+    built from it — so every live pick went out as 'live_down', "short",
+    whatever the score. A push is not covering, as everywhere else.
+    """
+    status = game.get("status")
+    if status == "final":
+        return did_cover(game, picked_team)
+    if status != "in_progress":
+        return None
+    home, away, spread = (
+        game.get("homeScore"), game.get("awayScore"), game.get("spread"))
+    if home is None or away is None or spread is None:
+        return None
+    home_margin = home - away
+    if picked_team == game.get("homeTeam"):
+        return home_margin + spread > 0
+    return -home_margin - spread > 0
+
+
 def _kickoffs(games):
     out = []
     for g in games or []:

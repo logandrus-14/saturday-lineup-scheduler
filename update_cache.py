@@ -1556,7 +1556,7 @@ def push_live_activities(token, season, week, slate, now):
     scores their refresh — the same wrapper the other notifications get.
     """
     import live_activity
-    from scoring import SLOT_POINTS, did_cover
+    from scoring import SLOT_POINTS, did_cover, is_covering
 
     p8 = os.environ.get("APNS_KEY_P8", "").replace("\\n", "\n").strip()
     if not p8:
@@ -1606,6 +1606,11 @@ def push_live_activities(token, season, week, slate, now):
                     continue
                 team = f.get("team", {}).get("stringValue")
                 covered = did_cover(game, team)
+                # What the CARD shows for a live game is where it stands now
+                # — did_cover is None until final, so every live pick used
+                # to go out as short. The won/lost sums below still score
+                # from did_cover: those are points actually banked.
+                showing = is_covering(game, team)
                 if game["status"] == "final":
                     if covered:
                         won += points
@@ -1628,7 +1633,7 @@ def push_live_activities(token, season, week, slate, now):
                     status=("final" if game["status"] == "final"
                             else "live" if game["status"] == "in_progress"
                             else "scheduled"),
-                    covered=covered,
+                    covered=showing,
                     kickoff=_kickoff_label(game.get("startDate")),
                     clock=_game_clock(game),
                 ))
