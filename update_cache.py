@@ -2331,8 +2331,15 @@ def announce_perfect_weeks(token, project, season, week, perfect_now,
     return sent
 
 
-def write_nfl_cache(token):
+def write_nfl_cache(token, include_next=False):
     """This NFL week, for Fumbling — see nfl.py. Never raises.
+
+    [include_next] also caches NEXT week, so the board can list upcoming
+    games under their dates once this week's are under way. Logan, Oct 4
+    2026: "I also would like upcoming NFL games so we could have a todays
+    games label, tomorrows games label (if applicable), and then upcoming
+    with dates". Only the scheduled job asks — the every-minute NFL shift
+    has no use for a week nobody is playing.
 
     Returns the games it wrote, or None when it wrote nothing — nfl_live.py
     reads them to decide how soon to look again.
@@ -2356,18 +2363,39 @@ def write_nfl_cache(token):
         games = nfl.parse(data, json.loads(prior_raw) if prior_raw else None)
         now = (dt.datetime.now(dt.timezone.utc)
                .isoformat().replace("+00:00", "Z"))
-        for path, fields in (
-            (f"cache/{doc_id}", {
-                "gamesJson": {"stringValue": json.dumps(games)},
-                "updatedAt": {"timestampValue": now},
-            }),
-            ("cache/nfl_current", {
-                "season": {"integerValue": str(season)},
-                "seasonType": {"integerValue": str(stype)},
-                "week": {"integerValue": str(week)},
-                "updatedAt": {"timestampValue": now},
-            }),
-        ):
+        current = {
+            "season": {"integerValue": str(season)},
+            "seasonType": {"integerValue": str(stype)},
+            "week": {"integerValue": str(week)},
+            "updatedAt": {"timestampValue": now},
+        }
+        writes = [(f"cache/{doc_id}", {
+            "gamesJson": {"stringValue": json.dumps(games)},
+            "updatedAt": {"timestampValue": now},
+        })]
+        nxt = nfl.next_week(stype, week) if include_next else None
+        if nxt:
+            try:
+                ndata = nfl.fetch(week=nxt[1], season_type=nxt[0])
+                ngames = nfl.parse(ndata)
+                if ngames:
+                    writes.append((f"cache/nfl_{season}_{nxt[0]}_{nxt[1]}", {
+                        "gamesJson": {"stringValue": json.dumps(ngames)},
+                        "updatedAt": {"timestampValue": now},
+                    }))
+                    current["nextSeasonType"] = {"integerValue": str(nxt[0])}
+                    current["nextWeek"] = {"integerValue": str(nxt[1])}
+            except Exception as e:
+                print(f"NFL next week skipped: {e}")
+        elif not include_next:
+            # The live shift writes nfl_current too; keep the next week the
+            # scheduled job found rather than wiping it every minute.
+            prior_cur = (fs_get(token, "cache/nfl_current") or {}).get("fields", {})
+            for k in ("nextSeasonType", "nextWeek"):
+                if k in prior_cur:
+                    current[k] = prior_cur[k]
+        writes.append(("cache/nfl_current", current))
+        for path, fields in writes:
             req = urllib.request.Request(
                 f"{FS}/{PARENT}/{path}",
                 data=json.dumps({"fields": fields}).encode(), method="PATCH",
@@ -2437,7 +2465,7 @@ def main():
     cfbd = os.environ["CFBD_API_KEY"]
     token = access_token(key)
 
-    write_nfl_cache(token)
+    write_nfl_cache(token, include_next=True)
     write_futures_cache(token, futures_season(dt.datetime.now(dt.timezone.utc)))
 
     # Bail out before spending a single CFBD call if the cache is already

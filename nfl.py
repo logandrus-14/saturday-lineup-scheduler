@@ -153,3 +153,17 @@ def week_of(data):
     season = data.get("season", {})
     return (season.get("year"), season.get("type"),
             data.get("week", {}).get("number"))
+
+
+def next_week(season_type, week):
+    """The ESPN week after (type, week), or None at the end of a season.
+    The regular season is 18 weeks; the postseason is numbered 1–5 again
+    (wild card, divisional, conference, the bye, the Super Bowl)."""
+    if season_type == 2:
+        return (2, week + 1) if week < 18 else (3, 1)
+    if season_type == 3 and week < 5:
+        return (3, week + 1)
+    if season_type == 1:  # preseason runs into week 1
+        return (2, 1)
+    return None
+

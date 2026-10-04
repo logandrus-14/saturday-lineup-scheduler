@@ -61,6 +61,10 @@ check("ball with the away team",
 check("no possession is None, never a side",
       nfl._possession({"situation": {}}, home, away), None)
 
+check("next week", nfl.next_week(2, 5), (2, 6))
+check("regular season rolls into the playoffs", nfl.next_week(2, 18), (3, 1))
+check("after the Super Bowl, nothing", nfl.next_week(3, 5), None)
+
 check("week_of", nfl.week_of(FIX["scheduled"])[1:], (2, 5))
 check("EVEN is +100", nfl._price("EVEN"), 100)
 check("junk price is None", nfl._price("n/a"), None)
