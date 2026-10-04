@@ -2331,10 +2331,58 @@ def announce_perfect_weeks(token, project, season, week, perfect_now,
     return sent
 
 
+def write_nfl_cache(token):
+    """This NFL week, for Fumbling — see nfl.py. Never raises.
+
+    Before everything else in main(), and outside the freshness bail-out:
+    it is one free request to ESPN, NFL games fall on days the college
+    cache considers quiet, and a failure here must cost the college scores
+    nothing.
+    """
+    import nfl
+
+    try:
+        data = nfl.fetch()
+        season, stype, week = nfl.week_of(data)
+        if not (season and stype and week):
+            return
+        doc_id = f"nfl_{season}_{stype}_{week}"
+        prior_doc = fs_get(token, f"cache/{doc_id}") or {}
+        prior_raw = prior_doc.get("fields", {}).get("gamesJson", {}) \
+                             .get("stringValue")
+        games = nfl.parse(data, json.loads(prior_raw) if prior_raw else None)
+        now = (dt.datetime.now(dt.timezone.utc)
+               .isoformat().replace("+00:00", "Z"))
+        for path, fields in (
+            (f"cache/{doc_id}", {
+                "gamesJson": {"stringValue": json.dumps(games)},
+                "updatedAt": {"timestampValue": now},
+            }),
+            ("cache/nfl_current", {
+                "season": {"integerValue": str(season)},
+                "seasonType": {"integerValue": str(stype)},
+                "week": {"integerValue": str(week)},
+                "updatedAt": {"timestampValue": now},
+            }),
+        ):
+            req = urllib.request.Request(
+                f"{FS}/{PARENT}/{path}",
+                data=json.dumps({"fields": fields}).encode(), method="PATCH",
+                headers={"Authorization": f"Bearer {token}",
+                         "Content-Type": "application/json"})
+            _send_write(req)
+        print(f"cached NFL {season} type {stype} week {week}: "
+              f"{len(games)} games")
+    except Exception as e:
+        print(f"NFL cache skipped: {e}")
+
+
 def main():
     key = json.loads(os.environ["FIREBASE_SERVICE_ACCOUNT"])
     cfbd = os.environ["CFBD_API_KEY"]
     token = access_token(key)
+
+    write_nfl_cache(token)
 
     # Bail out before spending a single CFBD call if the cache is already
     # fresh enough for what day it is. FORCE_REFRESH=1 overrides, so a

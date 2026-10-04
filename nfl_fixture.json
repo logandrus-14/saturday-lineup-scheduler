@@ -1,0 +1,224 @@
+{
+ "scheduled": {
+  "season": {
+   "type": 2,
+   "year": 2026
+  },
+  "week": {
+   "number": 5
+  },
+  "events": [
+   {
+    "id": "401872980",
+    "date": "2026-10-09T00:15Z",
+    "competitions": [
+     {
+      "status": {
+       "clock": 0.0,
+       "displayClock": "0:00",
+       "period": 0,
+       "type": {
+        "id": "1",
+        "name": "STATUS_SCHEDULED",
+        "state": "pre",
+        "completed": false,
+        "description": "Scheduled",
+        "detail": "Thu, October 8th at 8:15 PM EDT",
+        "shortDetail": "10/8 - 8:15 PM EDT"
+       },
+       "isTBDFlex": false
+      },
+      "competitors": [
+       {
+        "homeAway": "home",
+        "score": "0",
+        "team": {
+         "displayName": "Dallas Cowboys",
+         "abbreviation": "DAL"
+        }
+       },
+       {
+        "homeAway": "away",
+        "score": "0",
+        "team": {
+         "displayName": "Tampa Bay Buccaneers",
+         "abbreviation": "TB"
+        }
+       }
+      ],
+      "odds": [
+       {
+        "spread": -9.5,
+        "overUnder": 47.5,
+        "moneyline": {
+         "home": {
+          "close": {
+           "odds": "-535"
+          }
+         },
+         "away": {
+          "close": {
+           "odds": "+400"
+          }
+         }
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "401872981",
+    "date": "2026-10-11T13:30Z",
+    "competitions": [
+     {
+      "status": {
+       "clock": 0.0,
+       "displayClock": "0:00",
+       "period": 0,
+       "type": {
+        "id": "1",
+        "name": "STATUS_SCHEDULED",
+        "state": "pre",
+        "completed": false,
+        "description": "Scheduled",
+        "detail": "Sun, October 11th at 9:30 AM EDT",
+        "shortDetail": "10/11 - 9:30 AM EDT"
+       },
+       "isTBDFlex": false
+      },
+      "competitors": [
+       {
+        "homeAway": "home",
+        "score": "0",
+        "team": {
+         "displayName": "Jacksonville Jaguars",
+         "abbreviation": "JAX"
+        }
+       },
+       {
+        "homeAway": "away",
+        "score": "0",
+        "team": {
+         "displayName": "Philadelphia Eagles",
+         "abbreviation": "PHI"
+        }
+       }
+      ],
+      "odds": [
+       {
+        "spread": -3.0,
+        "overUnder": 44.5,
+        "moneyline": {
+         "home": {
+          "close": {
+           "odds": "-162"
+          }
+         },
+         "away": {
+          "close": {
+           "odds": "+136"
+          }
+         }
+        }
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "started": {
+  "season": {
+   "type": 2,
+   "year": 2026
+  },
+  "week": {
+   "number": 4
+  },
+  "events": [
+   {
+    "id": "401872971",
+    "date": "2026-10-04T17:00Z",
+    "competitions": [
+     {
+      "status": {
+       "clock": 616.0,
+       "displayClock": "10:16",
+       "period": 1,
+       "type": {
+        "id": "2",
+        "name": "STATUS_IN_PROGRESS",
+        "state": "in",
+        "completed": false,
+        "description": "In Progress",
+        "detail": "10:16 - 1st Quarter",
+        "shortDetail": "10:16 - 1st"
+       },
+       "isTBDFlex": false
+      },
+      "competitors": [
+       {
+        "homeAway": "home",
+        "score": "0",
+        "team": {
+         "displayName": "Buffalo Bills",
+         "abbreviation": "BUF"
+        }
+       },
+       {
+        "homeAway": "away",
+        "score": "0",
+        "team": {
+         "displayName": "New England Patriots",
+         "abbreviation": "NE"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "401872972",
+    "date": "2026-10-04T17:00Z",
+    "competitions": [
+     {
+      "status": {
+       "clock": 674.0,
+       "displayClock": "11:14",
+       "period": 1,
+       "type": {
+        "id": "2",
+        "name": "STATUS_IN_PROGRESS",
+        "state": "in",
+        "completed": false,
+        "description": "In Progress",
+        "detail": "11:14 - 1st Quarter",
+        "shortDetail": "11:14 - 1st"
+       },
+       "isTBDFlex": false
+      },
+      "competitors": [
+       {
+        "homeAway": "home",
+        "score": "0",
+        "team": {
+         "displayName": "Chicago Bears",
+         "abbreviation": "CHI"
+        }
+       },
+       {
+        "homeAway": "away",
+        "score": "0",
+        "team": {
+         "displayName": "New York Jets",
+         "abbreviation": "NYJ"
+        }
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ }
+}
