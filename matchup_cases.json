@@ -1,0 +1,739 @@
+{
+ "pairings": [
+  {
+   "groupId": "KX348H_like",
+   "members": [
+    "H97FRYabc",
+    "uOak1",
+    "uTy22",
+    "uAli3",
+    "uGramps",
+    "uGoat"
+   ],
+   "week": 1,
+   "pairings": [
+    [
+     "uOak1",
+     "uTy22"
+    ],
+    [
+     "H97FRYabc",
+     "uGramps"
+    ],
+    [
+     "uGoat",
+     "uAli3"
+    ]
+   ]
+  },
+  {
+   "groupId": "KX348H_like",
+   "members": [
+    "H97FRYabc",
+    "uOak1",
+    "uTy22",
+    "uAli3",
+    "uGramps",
+    "uGoat"
+   ],
+   "week": 2,
+   "pairings": [
+    [
+     "uOak1",
+     "uGramps"
+    ],
+    [
+     "uTy22",
+     "uAli3"
+    ],
+    [
+     "H97FRYabc",
+     "uGoat"
+    ]
+   ]
+  },
+  {
+   "groupId": "KX348H_like",
+   "members": [
+    "H97FRYabc",
+    "uOak1",
+    "uTy22",
+    "uAli3",
+    "uGramps",
+    "uGoat"
+   ],
+   "week": 5,
+   "pairings": [
+    [
+     "uOak1",
+     "H97FRYabc"
+    ],
+    [
+     "uGoat",
+     "uTy22"
+    ],
+    [
+     "uAli3",
+     "uGramps"
+    ]
+   ]
+  },
+  {
+   "groupId": "KX348H_like",
+   "members": [
+    "H97FRYabc",
+    "uOak1",
+    "uTy22",
+    "uAli3",
+    "uGramps",
+    "uGoat"
+   ],
+   "week": 9,
+   "pairings": [
+    [
+     "uOak1",
+     "uGoat"
+    ],
+    [
+     "uAli3",
+     "H97FRYabc"
+    ],
+    [
+     "uGramps",
+     "uTy22"
+    ]
+   ]
+  },
+  {
+   "groupId": "KX348H_like",
+   "members": [
+    "H97FRYabc",
+    "uOak1",
+    "uTy22",
+    "uAli3",
+    "uGramps",
+    "uGoat"
+   ],
+   "week": 13,
+   "pairings": [
+    [
+     "uOak1",
+     "uAli3"
+    ],
+    [
+     "uGramps",
+     "uGoat"
+    ],
+    [
+     "uTy22",
+     "H97FRYabc"
+    ]
+   ]
+  },
+  {
+   "groupId": "odd13",
+   "members": [
+    "member0",
+    "member1",
+    "member2",
+    "member3",
+    "member4",
+    "member5",
+    "member6",
+    "member7",
+    "member8",
+    "member9",
+    "member10",
+    "member11",
+    "member12"
+   ],
+   "week": 1,
+   "pairings": [
+    [
+     "member9",
+     null
+    ],
+    [
+     "member8",
+     "member12"
+    ],
+    [
+     "member5",
+     "member11"
+    ],
+    [
+     "member4",
+     "member10"
+    ],
+    [
+     "member7",
+     "member2"
+    ],
+    [
+     "member6",
+     "member3"
+    ],
+    [
+     "member1",
+     "member0"
+    ]
+   ]
+  },
+  {
+   "groupId": "odd13",
+   "members": [
+    "member0",
+    "member1",
+    "member2",
+    "member3",
+    "member4",
+    "member5",
+    "member6",
+    "member7",
+    "member8",
+    "member9",
+    "member10",
+    "member11",
+    "member12"
+   ],
+   "week": 2,
+   "pairings": [
+    [
+     "member9",
+     "member12"
+    ],
+    [
+     "member11",
+     null
+    ],
+    [
+     "member8",
+     "member10"
+    ],
+    [
+     "member5",
+     "member2"
+    ],
+    [
+     "member4",
+     "member3"
+    ],
+    [
+     "member7",
+     "member0"
+    ],
+    [
+     "member6",
+     "member1"
+    ]
+   ]
+  },
+  {
+   "groupId": "odd13",
+   "members": [
+    "member0",
+    "member1",
+    "member2",
+    "member3",
+    "member4",
+    "member5",
+    "member6",
+    "member7",
+    "member8",
+    "member9",
+    "member10",
+    "member11",
+    "member12"
+   ],
+   "week": 5,
+   "pairings": [
+    [
+     "member9",
+     "member2"
+    ],
+    [
+     "member10",
+     "member3"
+    ],
+    [
+     "member11",
+     "member0"
+    ],
+    [
+     "member12",
+     "member1"
+    ],
+    [
+     "member6",
+     null
+    ],
+    [
+     "member8",
+     "member7"
+    ],
+    [
+     "member5",
+     "member4"
+    ]
+   ]
+  },
+  {
+   "groupId": "odd13",
+   "members": [
+    "member0",
+    "member1",
+    "member2",
+    "member3",
+    "member4",
+    "member5",
+    "member6",
+    "member7",
+    "member8",
+    "member9",
+    "member10",
+    "member11",
+    "member12"
+   ],
+   "week": 9,
+   "pairings": [
+    [
+     "member9",
+     "member6"
+    ],
+    [
+     "member1",
+     "member7"
+    ],
+    [
+     "member0",
+     "member4"
+    ],
+    [
+     "member3",
+     "member5"
+    ],
+    [
+     "member2",
+     "member8"
+    ],
+    [
+     "member10",
+     null
+    ],
+    [
+     "member11",
+     "member12"
+    ]
+   ]
+  },
+  {
+   "groupId": "odd13",
+   "members": [
+    "member0",
+    "member1",
+    "member2",
+    "member3",
+    "member4",
+    "member5",
+    "member6",
+    "member7",
+    "member8",
+    "member9",
+    "member10",
+    "member11",
+    "member12"
+   ],
+   "week": 13,
+   "pairings": [
+    [
+     "member9",
+     "member8"
+    ],
+    [
+     "member5",
+     null
+    ],
+    [
+     "member4",
+     "member12"
+    ],
+    [
+     "member7",
+     "member11"
+    ],
+    [
+     "member6",
+     "member10"
+    ],
+    [
+     "member1",
+     "member2"
+    ],
+    [
+     "member0",
+     "member3"
+    ]
+   ]
+  },
+  {
+   "groupId": "pair",
+   "members": [
+    "zeta",
+    "alpha"
+   ],
+   "week": 1,
+   "pairings": [
+    [
+     "alpha",
+     "zeta"
+    ]
+   ]
+  },
+  {
+   "groupId": "pair",
+   "members": [
+    "zeta",
+    "alpha"
+   ],
+   "week": 2,
+   "pairings": [
+    [
+     "alpha",
+     "zeta"
+    ]
+   ]
+  },
+  {
+   "groupId": "pair",
+   "members": [
+    "zeta",
+    "alpha"
+   ],
+   "week": 5,
+   "pairings": [
+    [
+     "alpha",
+     "zeta"
+    ]
+   ]
+  },
+  {
+   "groupId": "pair",
+   "members": [
+    "zeta",
+    "alpha"
+   ],
+   "week": 9,
+   "pairings": [
+    [
+     "alpha",
+     "zeta"
+    ]
+   ]
+  },
+  {
+   "groupId": "pair",
+   "members": [
+    "zeta",
+    "alpha"
+   ],
+   "week": 13,
+   "pairings": [
+    [
+     "alpha",
+     "zeta"
+    ]
+   ]
+  },
+  {
+   "groupId": "three",
+   "members": [
+    "c3",
+    "a1",
+    "b2"
+   ],
+   "week": 1,
+   "pairings": [
+    [
+     "c3",
+     null
+    ],
+    [
+     "a1",
+     "b2"
+    ]
+   ]
+  },
+  {
+   "groupId": "three",
+   "members": [
+    "c3",
+    "a1",
+    "b2"
+   ],
+   "week": 2,
+   "pairings": [
+    [
+     "c3",
+     "b2"
+    ],
+    [
+     "a1",
+     null
+    ]
+   ]
+  },
+  {
+   "groupId": "three",
+   "members": [
+    "c3",
+    "a1",
+    "b2"
+   ],
+   "week": 5,
+   "pairings": [
+    [
+     "c3",
+     "b2"
+    ],
+    [
+     "a1",
+     null
+    ]
+   ]
+  },
+  {
+   "groupId": "three",
+   "members": [
+    "c3",
+    "a1",
+    "b2"
+   ],
+   "week": 9,
+   "pairings": [
+    [
+     "c3",
+     "a1"
+    ],
+    [
+     "b2",
+     null
+    ]
+   ]
+  },
+  {
+   "groupId": "three",
+   "members": [
+    "c3",
+    "a1",
+    "b2"
+   ],
+   "week": 13,
+   "pairings": [
+    [
+     "c3",
+     null
+    ],
+    [
+     "a1",
+     "b2"
+    ]
+   ]
+  },
+  {
+   "groupId": "four",
+   "members": [
+    "w",
+    "x",
+    "y",
+    "z"
+   ],
+   "week": 1,
+   "pairings": [
+    [
+     "z",
+     "w"
+    ],
+    [
+     "x",
+     "y"
+    ]
+   ]
+  },
+  {
+   "groupId": "four",
+   "members": [
+    "w",
+    "x",
+    "y",
+    "z"
+   ],
+   "week": 2,
+   "pairings": [
+    [
+     "z",
+     "y"
+    ],
+    [
+     "w",
+     "x"
+    ]
+   ]
+  },
+  {
+   "groupId": "four",
+   "members": [
+    "w",
+    "x",
+    "y",
+    "z"
+   ],
+   "week": 5,
+   "pairings": [
+    [
+     "z",
+     "y"
+    ],
+    [
+     "w",
+     "x"
+    ]
+   ]
+  },
+  {
+   "groupId": "four",
+   "members": [
+    "w",
+    "x",
+    "y",
+    "z"
+   ],
+   "week": 9,
+   "pairings": [
+    [
+     "z",
+     "x"
+    ],
+    [
+     "y",
+     "w"
+    ]
+   ]
+  },
+  {
+   "groupId": "four",
+   "members": [
+    "w",
+    "x",
+    "y",
+    "z"
+   ],
+   "week": 13,
+   "pairings": [
+    [
+     "z",
+     "w"
+    ],
+    [
+     "x",
+     "y"
+    ]
+   ]
+  }
+ ],
+ "records": {
+  "groupId": "rec",
+  "members": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e"
+  ],
+  "scores": {
+   "1": {
+    "a": 10,
+    "b": -4,
+    "c": 6,
+    "d": 6,
+    "e": -28
+   },
+   "2": {
+    "a": -2,
+    "b": 8,
+    "c": 0,
+    "d": 12,
+    "e": 4
+   },
+   "3": {
+    "a": 14,
+    "b": 14,
+    "c": -6,
+    "d": 2,
+    "e": 0
+   }
+  },
+  "expected": {
+   "a": [
+    2,
+    1,
+    0,
+    22
+   ],
+   "b": [
+    2,
+    1,
+    0,
+    18
+   ],
+   "c": [
+    2,
+    1,
+    0,
+    0
+   ],
+   "d": [
+    1,
+    2,
+    0,
+    20
+   ],
+   "e": [
+    0,
+    3,
+    0,
+    -24
+   ]
+  },
+  "order": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e"
+  ],
+  "semis": [
+   [
+    "a",
+    "d"
+   ],
+   [
+    "b",
+    "c"
+   ]
+  ],
+  "semifinalScores": {
+   "a": 3,
+   "b": 9,
+   "c": 9,
+   "d": 1,
+   "e": 0
+  },
+  "final": [
+   [
+    "a",
+    "b"
+   ]
+  ]
+ }
+}

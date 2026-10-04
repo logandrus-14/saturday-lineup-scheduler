@@ -52,6 +52,11 @@ jobs:
           # half a point is not news, and this is exactly the path the flag
           # was invented to hold back.
           # NOTIFY_LINE_MOVES: '1'
+          # Matchup alerts — ON since Oct 4 2026, once build 58 (the first
+          # app that shows matchups) was approved and announced. Week 5's
+          # results were marked sent beforehand, so the first alerts are
+          # week 6's Wednesday opponent and Saturday result.
+          NOTIFY_MATCHUPS: '1'
           NOTIFY_KICKOFFS: '1'
           # ON since Aug 20 2026, once build 19 was approved and out.
           # Week 1 is Labor Day ONLY from here; the preseason is its own

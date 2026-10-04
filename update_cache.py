@@ -1394,6 +1394,10 @@ def deliver_nudges(token, project, season, week):
 GATED_NOTIFICATIONS = {
     "line moves": "NOTIFY_LINE_MOVES",
     "kickoffs": "NOTIFY_KICKOFFS",
+    # OFF until build 58 — the first app that can SHOW a matchup — is the
+    # one people have. An alert about a feature your app cannot display is
+    # just confusing. Turn on in update-cache.yml once 58 is approved.
+    "matchups": "NOTIFY_MATCHUPS",
 }
 
 # Which switches this process has already reported. A live shift calls
@@ -1790,6 +1794,8 @@ def write_season_standings(token, season, through_week):
 
     lineups = {}  # (uid, week) -> picks, so shared members are read once
     written = 0
+    matchup_sent = 0
+    opponent_alerts = {}  # uid -> [(group, opp, mine, theirs)], sent at end
 
     for group in fs_list(token, "groups"):
         gid = group["name"].rsplit("/", 1)[-1]
@@ -1800,6 +1806,7 @@ def write_season_standings(token, season, through_week):
         ]
 
         totals = {}
+        week_scores = {}  # week -> uid -> won − lost
         for uid in members:
             if not uid:
                 continue
@@ -1822,6 +1829,9 @@ def write_season_standings(token, season, through_week):
                 picks = lineups[(uid, week)]
                 won_w = weekly_points(picks, games)
                 lost_w = weekly_lost(picks, games)
+                # The week score for matchups — won − lost, the number the
+                # app's weekly tab prints. See notify_matchups.
+                week_scores.setdefault(week, {})[uid] = won_w - lost_w
                 points += won_w
                 lost += lost_w
                 picks_made += len(picks)
@@ -1862,6 +1872,20 @@ def write_season_standings(token, season, through_week):
         except Exception as e:
             print(f"  rank notifications skipped: {e}")
 
+        # Matchup alerts, for groups whose commissioner turned them on.
+        # Same rule as the rank alerts: never let them stop the standings.
+        gfields = group.get("fields", {})
+        if (gfields.get("matchups", {}).get("booleanValue") is True
+                and notification_enabled("matchups")):
+            try:
+                matchup_sent += notify_matchups(
+                    token, PROJECT, season, through_week, gid,
+                    gfields.get("name", {}).get("stringValue") or "your group",
+                    [m for m in members if m], week_scores,
+                    slates.get(through_week, []), opponent_alerts)
+            except Exception as e:
+                print(f"  matchup alerts skipped: {e}")
+
         body = {"fields": {
             "json": {"stringValue": json.dumps(totals)},
             "season": {"integerValue": str(season)},
@@ -1877,8 +1901,129 @@ def write_season_standings(token, season, through_week):
         _send_write(req)
         written += 1
 
+    try:
+        matchup_sent += send_opponent_alerts(
+            token, PROJECT, season, through_week, opponent_alerts)
+        if matchup_sent:
+            print(f"  sent {matchup_sent} matchup alert(s)")
+    except Exception as e:
+        print(f"  opponent alerts skipped: {e}")
+
     write_global_standings(token, season, through_week, slates, lineups)
     return written, len(slates)
+
+
+# ─── Matchup alerts ───────────────────────────────────────────────────────
+#
+# Logan, Oct 4 2026: "Add the matchup alerts". Two, both once per person
+# per week: who you play (Wednesday), and how it went (when the week is
+# over). Pairings come from matchups.py, the scheduler's copy of the app's
+# rules, pinned to it by matchup_cases.json. Wording and timing live in
+# matchup_alerts.py, where they are tested.
+
+_names_cache = {}
+
+
+def _name_of(token, uid):
+    if uid not in _names_cache:
+        doc = fs_get(token, f"users/{uid}") or {}
+        _names_cache[uid] = display_name_from(doc.get("fields", {}))
+    return _names_cache[uid]
+
+
+def notify_matchups(token, project, season, week, gid, group_name, members,
+                    week_scores, games, opponent_alerts):
+    """Queue this group's Wednesday alerts and send its results.
+
+    Returns how many RESULT alerts went out; the Wednesday ones are queued
+    in [opponent_alerts] so somebody in two matchup groups gets one alert
+    naming both opponents, not two.
+    """
+    import matchups
+    import matchup_alerts
+    import notify
+
+    now = dt.datetime.now(dt.timezone.utc)
+    current = week_scores.get(week, {})
+    # Records count FINISHED weeks only — every week before this one, as in
+    # the app (weekIsFinished).
+    finished = {w: sc for w, sc in week_scores.items() if w < week}
+    records = matchups.records_from(members, gid, finished)
+    seeds = matchups.standings_order(records)
+    semis = finished.get(matchups.SEMIFINAL_WEEK)
+    pairings = matchups.schedule_for(members, gid, week, seeds, semis)
+    if not pairings:
+        return 0
+
+    # Wednesday: queue who-you-play.
+    kickoffs = [g["startDate"] for g in games if g.get("startDate")]
+    first = (dt.datetime.fromisoformat(min(kickoffs).replace("Z", "+00:00"))
+             if kickoffs else None)
+    if matchup_alerts.opponent_window(now, first):
+        for uid in members:
+            p = matchups.pairing_of(pairings, uid)
+            if p is None:
+                continue
+            opp = matchups.opponent_in(p, uid)
+            opponent_alerts.setdefault(uid, []).append((
+                group_name,
+                None if opp is None else _name_of(token, opp),
+                matchups.record_label(records.get(uid, [0, 0, 0, 0])),
+                None if opp is None
+                else matchups.record_label(records.get(opp, [0, 0, 0, 0])),
+            ))
+
+    # The week is over: send each result, once.
+    if not matchup_alerts.week_over(games) or not current:
+        return 0
+    with_this_week = dict(finished)
+    with_this_week[week] = current
+    after = matchups.records_from(members, gid, with_this_week)
+    avg = matchups.average_of(current)
+    sent = 0
+    for uid in members:
+        p = matchups.pairing_of(pairings, uid)
+        if p is None or uid not in current:
+            continue
+        key = notify.dedupe_key("matchup_result", uid,
+                                f"{gid}_{season}_{week}")
+        if notify.already_sent(lambda q: fs_get(token, q), key):
+            continue
+        opp = matchups.opponent_in(p, uid)
+        theirs = avg if opp is None else current.get(opp)
+        if theirs is None:
+            continue
+        title, body = matchup_alerts.result_message(
+            group_name, None if opp is None else _name_of(token, opp),
+            current[uid], theirs,
+            matchups.record_label(after.get(uid, [0, 0, 0, 0])))
+        for dev, _ in notify.devices_for(lambda q: fs_list(token, q), uid):
+            notify.send_to_token(token, project, dev, title, body,
+                                 route="/home")
+        notify.record_sent(lambda q, f: _fs_patch(token, q, f), key,
+                           "matchup_result", uid)
+        sent += 1
+    return sent
+
+
+def send_opponent_alerts(token, project, season, week, opponent_alerts):
+    """The Wednesday alert — one per person, naming every opponent."""
+    import matchup_alerts
+    import notify
+
+    sent = 0
+    for uid, entries in opponent_alerts.items():
+        key = notify.dedupe_key("matchup_opponent", uid, f"{season}_{week}")
+        if notify.already_sent(lambda q: fs_get(token, q), key):
+            continue
+        title, body = matchup_alerts.opponent_message(entries, week)
+        for dev, _ in notify.devices_for(lambda q: fs_list(token, q), uid):
+            notify.send_to_token(token, project, dev, title, body,
+                                 route="/home")
+        notify.record_sent(lambda q, f: _fs_patch(token, q, f), key,
+                           "matchup_opponent", uid)
+        sent += 1
+    return sent
 
 
 def display_name_from(fields):
