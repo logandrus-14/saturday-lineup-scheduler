@@ -2382,12 +2382,63 @@ def write_nfl_cache(token):
         return None
 
 
+def write_futures_cache(token, season):
+    """Fumbling's futures — see futures.py. Never raises.
+
+    Refreshed at most every FUTURES_EVERY: futures prices move over days,
+    not minutes, and the first build of a league fetches dozens of athlete
+    names. Each league is its own document and its own failure.
+    """
+    import futures
+
+    for league in ("ncaaf", "nfl"):
+        try:
+            doc = fs_get(token, f"cache/futures_{league}") or {}
+            fields = doc.get("fields", {})
+            stamp = fields.get("updatedAt", {}).get("timestampValue")
+            if stamp:
+                age = dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(
+                    stamp.replace("Z", "+00:00"))
+                if age < FUTURES_EVERY:
+                    continue
+            raw = fields.get("json", {}).get("stringValue")
+            data = futures.fetch(league, season, json.loads(raw) if raw else None)
+            if not data["markets"]:
+                print(f"futures {league}: none listed — kept the last copy")
+                continue
+            now = (dt.datetime.now(dt.timezone.utc)
+                   .isoformat().replace("+00:00", "Z"))
+            req = urllib.request.Request(
+                f"{FS}/{PARENT}/cache/futures_{league}",
+                data=json.dumps({"fields": {
+                    "json": {"stringValue": json.dumps(data)},
+                    "updatedAt": {"timestampValue": now},
+                }}).encode(), method="PATCH",
+                headers={"Authorization": f"Bearer {token}",
+                         "Content-Type": "application/json"})
+            _send_write(req)
+            print(f"cached futures {league}: {len(data['markets'])} markets")
+        except Exception as e:
+            print(f"futures {league} skipped: {e}")
+
+
+FUTURES_EVERY = dt.timedelta(hours=6)
+
+
+def futures_season(now):
+    """The season whose futures are on the board. Both leagues finish in
+    the NEXT calendar year — the title game in January, the Super Bowl in
+    February — so until March it is still last year's season."""
+    return now.year if now.month >= 3 else now.year - 1
+
+
 def main():
     key = json.loads(os.environ["FIREBASE_SERVICE_ACCOUNT"])
     cfbd = os.environ["CFBD_API_KEY"]
     token = access_token(key)
 
     write_nfl_cache(token)
+    write_futures_cache(token, futures_season(dt.datetime.now(dt.timezone.utc)))
 
     # Bail out before spending a single CFBD call if the cache is already
     # fresh enough for what day it is. FORCE_REFRESH=1 overrides, so a
