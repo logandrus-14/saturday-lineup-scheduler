@@ -1,0 +1,42 @@
+# GitHub Actions workflow: keeps NFL scores fresh while NFL games are on,
+# for Fumbling's live win chance. Put this file at
+# .github/workflows/nfl-live.yml in the scheduler repo.
+#
+# Needs only FIREBASE_SERVICE_ACCOUNT — ESPN takes no key.
+#
+# Separate from live-refresh.yml on purpose: see nfl_live.py. Each shift
+# ends by itself once nothing is live or within reach, so the extra starts
+# below cost nothing on days without games (and a public repo's Actions
+# minutes are free).
+name: NFL live refresh
+
+on:
+  schedule:
+    # Sunday, UTC: London games (13:30Z), the 1pm and 4pm ET windows, and
+    # Sunday night — which runs past midnight UTC into Monday.
+    - cron: '0 13,15,17,19,21,23 * * 0'
+    - cron: '0 1,3 * * 1'
+    # Monday and Thursday night (00:15Z the next UTC day), and the late
+    # season's Saturday games.
+    - cron: '0 23 * * 1,4'
+    - cron: '0 1,3 * * 2,5'
+    - cron: '0 17,19,21,23 * * 6'
+  workflow_dispatch: {}
+
+concurrency:
+  group: nfl-live-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Refresh NFL scores while games are live
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: python3 nfl_live.py

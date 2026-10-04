@@ -63,6 +63,21 @@ def _status(comp):
     return "scheduled"
 
 
+def _period(comp):
+    p = (comp.get("status") or {}).get("period")
+    return int(p) if isinstance(p, (int, float)) and p > 0 else None
+
+
+def _clock(comp):
+    """'8:14' while the game is on. ESPN's displayClock, checked to be a
+    clock, because a halftime or delay can carry other text."""
+    c = (comp.get("status") or {}).get("displayClock")
+    if not isinstance(c, str) or ":" not in c:
+        return None
+    m, _, sec = c.partition(":")
+    return c if m.isdigit() and sec[:2].isdigit() else None
+
+
 def parse(data, prior=None):
     """ESPN's scoreboard -> the app's game shape. [prior] is the last cached
     list for the same week, whose lines fill in any game ESPN has stopped
@@ -86,6 +101,11 @@ def parse(data, prior=None):
             "awayAbbr": away["team"].get("abbreviation"),
             "startDate": ev.get("date"),
             "status": status,
+            # Quarter and clock while the game is on, for Fumbling's win
+            # chance (the score alone cannot say how much football is left).
+            # Null otherwise, exactly as the college cache carries them.
+            "period": _period(comp) if status == "live" else None,
+            "clock": _clock(comp) if status == "live" else None,
             "homeScore": int(home["score"]) if status != "scheduled"
             and home.get("score") not in (None, "") else None,
             "awayScore": int(away["score"]) if status != "scheduled"

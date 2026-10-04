@@ -2334,6 +2334,9 @@ def announce_perfect_weeks(token, project, season, week, perfect_now,
 def write_nfl_cache(token):
     """This NFL week, for Fumbling — see nfl.py. Never raises.
 
+    Returns the games it wrote, or None when it wrote nothing — nfl_live.py
+    reads them to decide how soon to look again.
+
     Before everything else in main(), and outside the freshness bail-out:
     it is one free request to ESPN, NFL games fall on days the college
     cache considers quiet, and a failure here must cost the college scores
@@ -2345,7 +2348,7 @@ def write_nfl_cache(token):
         data = nfl.fetch()
         season, stype, week = nfl.week_of(data)
         if not (season and stype and week):
-            return
+            return None
         doc_id = f"nfl_{season}_{stype}_{week}"
         prior_doc = fs_get(token, f"cache/{doc_id}") or {}
         prior_raw = prior_doc.get("fields", {}).get("gamesJson", {}) \
@@ -2373,8 +2376,10 @@ def write_nfl_cache(token):
             _send_write(req)
         print(f"cached NFL {season} type {stype} week {week}: "
               f"{len(games)} games")
+        return games
     except Exception as e:
         print(f"NFL cache skipped: {e}")
+        return None
 
 
 def main():

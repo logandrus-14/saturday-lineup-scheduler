@@ -45,6 +45,13 @@ check("…and get them back from the last cached copy",
       (carried[0]["spread"], carried[0]["overUnder"]), (-3.0, 44.5))
 check("a started game has a score", carried[0]["homeScore"] is not None, True)
 
+check("a live game carries its quarter and clock",
+      (carried[0]["period"], carried[0]["clock"]), (1, "10:16"))
+check("a scheduled game carries neither", (g["period"], g["clock"]),
+      (None, None))
+check("a clock that is not a clock is dropped",
+      nfl._clock({"status": {"displayClock": "Halftime"}}), None)
+
 check("week_of", nfl.week_of(FIX["scheduled"])[1:], (2, 5))
 check("EVEN is +100", nfl._price("EVEN"), 100)
 check("junk price is None", nfl._price("n/a"), None)
