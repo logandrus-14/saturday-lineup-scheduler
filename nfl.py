@@ -78,6 +78,17 @@ def _clock(comp):
     return c if m.isdigit() and sec[:2].isdigit() else None
 
 
+def _possession(comp, home, away):
+    pid = (comp.get("situation") or {}).get("possession")
+    if not pid:
+        return None
+    if str(pid) == str(home.get("team", {}).get("id") or home.get("id")):
+        return "home"
+    if str(pid) == str(away.get("team", {}).get("id") or away.get("id")):
+        return "away"
+    return None
+
+
 def parse(data, prior=None):
     """ESPN's scoreboard -> the app's game shape. [prior] is the last cached
     list for the same week, whose lines fill in any game ESPN has stopped
@@ -106,6 +117,14 @@ def parse(data, prior=None):
             # Null otherwise, exactly as the college cache carries them.
             "period": _period(comp) if status == "live" else None,
             "clock": _clock(comp) if status == "live" else None,
+            # Who has the ball, as 'home'/'away' — the college cache's own
+            # convention. ESPN names the TEAM ID; null whenever it does not
+            # say (between quarters, after a score), never a guess.
+            "possession": _possession(comp, home, away)
+            if status == "live" else None,
+            "situation": ((comp.get("situation") or {})
+                          .get("downDistanceText") or None)
+            if status == "live" else None,
             "homeScore": int(home["score"]) if status != "scheduled"
             and home.get("score") not in (None, "") else None,
             "awayScore": int(away["score"]) if status != "scheduled"

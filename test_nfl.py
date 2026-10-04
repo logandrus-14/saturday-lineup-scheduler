@@ -52,6 +52,15 @@ check("a scheduled game carries neither", (g["period"], g["clock"]),
 check("a clock that is not a clock is dropped",
       nfl._clock({"status": {"displayClock": "Halftime"}}), None)
 
+home = {"team": {"id": "16"}}
+away = {"team": {"id": "15"}}
+check("ball with the home team",
+      nfl._possession({"situation": {"possession": "16"}}, home, away), "home")
+check("ball with the away team",
+      nfl._possession({"situation": {"possession": "15"}}, home, away), "away")
+check("no possession is None, never a side",
+      nfl._possession({"situation": {}}, home, away), None)
+
 check("week_of", nfl.week_of(FIX["scheduled"])[1:], (2, 5))
 check("EVEN is +100", nfl._price("EVEN"), 100)
 check("junk price is None", nfl._price("n/a"), None)
