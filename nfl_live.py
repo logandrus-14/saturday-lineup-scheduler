@@ -36,6 +36,11 @@ IDLE_INTERVAL = 5 * 60
 WARMUP = dt.timedelta(hours=1)
 KICKOFF_COVER = dt.timedelta(minutes=30)
 TOKEN_EVERY = dt.timedelta(minutes=45)  # tokens last an hour
+# How often the shift also re-caches NEXT week. Oct 4 2026: a shift running
+# older code rewrote nfl_current without the next week a minute after the
+# scheduled job added it, and the board lost every upcoming game. Doing it
+# from here too means one stale writer can't hide them for long.
+NEXT_EVERY = dt.timedelta(minutes=30)
 MAX_MISSES = 5  # consecutive ticks that wrote nothing
 
 
@@ -83,6 +88,7 @@ def main():
     started = dt.datetime.now(dt.timezone.utc)
     deadline = started + MAX_SHIFT
     minted = started
+    next_cached = dt.datetime.fromtimestamp(0, dt.timezone.utc)
     misses = 0
     print(f"NFL shift start {started:%Y-%m-%d %H:%M}Z")
 
@@ -100,7 +106,10 @@ def main():
                 time.sleep(LIVE_INTERVAL)
                 continue
 
-        games = write_nfl_cache(token)  # never raises
+        with_next = now - next_cached >= NEXT_EVERY
+        games = write_nfl_cache(token, include_next=with_next)  # never raises
+        if with_next and games is not None:
+            next_cached = now
         if games is None:
             misses += 1
             print(f"  tick wrote nothing ({misses}/{MAX_MISSES})")
