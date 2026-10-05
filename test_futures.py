@@ -44,5 +44,18 @@ check("January is still last season",
       futures_season(dt.datetime(2027, 1, 20)), 2026)
 check("March is the new one", futures_season(dt.datetime(2027, 3, 1)), 2027)
 
+# ── NBA (Oct 5 2026) ────────────────────────────────────────────────────
+for raw, want in [
+    ("NBA - Winner", "NBA Champion"),
+    ("NBA - Eastern Conference - Winner", "East Champion"),
+    ("NBA - Western Conference - Winner", "West Champion"),
+    ("NBA - Regular Season MVP", "NBA MVP"),
+    ("NBA - Rookie of the Year", "Rookie of the Year"),
+    ("NBA Eastern Conference - Atlantic Division", "Atlantic Division"),
+    ("NBA - In-Season East Group A Winner", None),
+    ("NBA - 6th Man of the Year", None),
+]:
+    check(f"nba market {raw!r}", futures.market_name(raw, "nba"), want)
+
 print(f"{checks - failures}/{checks} futures checks pass")
 sys.exit(1 if failures else 0)

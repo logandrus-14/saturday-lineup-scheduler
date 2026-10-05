@@ -2410,6 +2410,69 @@ def write_nfl_cache(token, include_next=False):
         return None
 
 
+def write_nba_cache(token, live=False):
+    """NBA games for Fumbling — see nba.py. Never raises.
+
+    One doc per US Eastern day, cache/nba_<YYYYMMDD>, for yesterday through
+    six days on, and cache/nba_current naming the season and those days.
+    [live] (the every-minute shift) refreshes only yesterday and today and
+    leaves nba_current's list of days alone.
+
+    Returns the games of the days it wrote, or None when it wrote nothing.
+    """
+    import nba
+
+    try:
+        now_utc = dt.datetime.now(dt.timezone.utc)
+        days = nba.window(now_utc)
+        if live:
+            days = days[:2]
+        stamp = now_utc.isoformat().replace("+00:00", "Z")
+        season = None
+        written = []
+        for day in days:
+            try:
+                data = nba.fetch(day)
+            except Exception as e:
+                print(f"NBA {day} skipped: {e}")
+                continue
+            season = season or nba.season_of(data)
+            prior_doc = fs_get(token, f"cache/nba_{day}") or {}
+            prior_raw = prior_doc.get("fields", {}).get("gamesJson", {}) \
+                                 .get("stringValue")
+            games = nba.parse(data, json.loads(prior_raw) if prior_raw else None)
+            if not games and not prior_raw:
+                continue  # an empty night: nothing to write
+            req = urllib.request.Request(
+                f"{FS}/{PARENT}/cache/nba_{day}",
+                data=json.dumps({"fields": {
+                    "gamesJson": {"stringValue": json.dumps(games)},
+                    "season": {"integerValue": str(season or 0)},
+                    "updatedAt": {"timestampValue": stamp},
+                }}).encode(), method="PATCH",
+                headers={"Authorization": f"Bearer {token}",
+                         "Content-Type": "application/json"})
+            _send_write(req)
+            written.extend(games)
+        if not live and season:
+            req = urllib.request.Request(
+                f"{FS}/{PARENT}/cache/nba_current",
+                data=json.dumps({"fields": {
+                    "season": {"integerValue": str(season)},
+                    "days": {"arrayValue": {"values": [
+                        {"stringValue": d} for d in days]}},
+                    "updatedAt": {"timestampValue": stamp},
+                }}).encode(), method="PATCH",
+                headers={"Authorization": f"Bearer {token}",
+                         "Content-Type": "application/json"})
+            _send_write(req)
+        print(f"cached NBA {days[0]}–{days[-1]}: {len(written)} games")
+        return written if season else None
+    except Exception as e:
+        print(f"NBA cache skipped: {e}")
+        return None
+
+
 def write_futures_cache(token, season):
     """Fumbling's futures — see futures.py. Never raises.
 
@@ -2419,7 +2482,7 @@ def write_futures_cache(token, season):
     """
     import futures
 
-    for league in ("ncaaf", "nfl"):
+    for league in ("ncaaf", "nfl", "nba"):
         try:
             doc = fs_get(token, f"cache/futures_{league}") or {}
             fields = doc.get("fields", {})
@@ -2430,7 +2493,9 @@ def write_futures_cache(token, season):
                 if age < FUTURES_EVERY:
                     continue
             raw = fields.get("json", {}).get("stringValue")
-            data = futures.fetch(league, season, json.loads(raw) if raw else None)
+            lseason = (nba_season(dt.datetime.now(dt.timezone.utc))
+                       if league == "nba" else season)
+            data = futures.fetch(league, lseason, json.loads(raw) if raw else None)
             if not data["markets"]:
                 print(f"futures {league}: none listed — kept the last copy")
                 continue
@@ -2453,6 +2518,12 @@ def write_futures_cache(token, season):
 FUTURES_EVERY = dt.timedelta(hours=6)
 
 
+def nba_season(now):
+    """ESPN names an NBA season by the year it ENDS — 2026-27 is 2027 — and
+    it runs October to June, so from July on it is next year's."""
+    return now.year + 1 if now.month >= 7 else now.year
+
+
 def futures_season(now):
     """The season whose futures are on the board. Both leagues finish in
     the NEXT calendar year — the title game in January, the Super Bowl in
@@ -2466,6 +2537,7 @@ def main():
     token = access_token(key)
 
     write_nfl_cache(token, include_next=True)
+    write_nba_cache(token)
     write_futures_cache(token, futures_season(dt.datetime.now(dt.timezone.utc)))
 
     # Bail out before spending a single CFBD call if the cache is already

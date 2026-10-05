@@ -10,6 +10,9 @@
 # minutes are free).
 name: NFL live refresh
 
+# The NBA rides along (Oct 5 2026) — see nfl_live.py. Its nightly starts are
+# the last two crons.
+
 on:
   schedule:
     # Sunday, UTC: London games (13:30Z), the 1pm and 4pm ET windows, and
@@ -21,6 +24,10 @@ on:
     - cron: '0 23 * * 1,4'
     - cron: '0 1,3 * * 2,5'
     - cron: '0 17,19,21,23 * * 6'
+    # NBA, every night: an hour before the 7pm ET tip-offs, and again for
+    # the late West Coast games.
+    - cron: '0 22 * * *'
+    - cron: '0 2 * * *'
   workflow_dispatch: {}
 
 concurrency:
@@ -36,7 +43,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Refresh NFL scores while games are live
+      - name: Refresh NFL and NBA scores while games are live
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: python3 nfl_live.py

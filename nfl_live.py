@@ -20,6 +20,12 @@ kickoff, sleeps through gaps it will outlive (1pm → 4pm → 8:20pm ET on a
 Sunday), and ends when nothing is left within reach. ESPN is free and
 keyless, so a tick costs one request and two Firestore writes.
 
+**THE NBA RIDES ALONG (Oct 5 2026).** Logan: "can we add the NBA?
+Preseason just started". Its games are pretend bets too, from the same ESPN
+family, so each tick also refreshes today's (and yesterday's, for games past
+midnight) NBA games, and the shift stays awake while either league has
+something on. The workflow gained nightly starts for the NBA.
+
     FIREBASE_SERVICE_ACCOUNT=... python3 nfl_live.py
 """
 
@@ -28,7 +34,8 @@ import json
 import os
 import time
 
-from update_cache import access_token, write_nfl_cache  # noqa: E402
+from update_cache import (  # noqa: E402
+    access_token, write_nba_cache, write_nfl_cache)
 
 MAX_SHIFT = dt.timedelta(hours=5, minutes=30)
 LIVE_INTERVAL = 60
@@ -90,7 +97,7 @@ def main():
     minted = started
     next_cached = dt.datetime.fromtimestamp(0, dt.timezone.utc)
     misses = 0
-    print(f"NFL shift start {started:%Y-%m-%d %H:%M}Z")
+    print(f"NFL/NBA shift start {started:%Y-%m-%d %H:%M}Z")
 
     while dt.datetime.now(dt.timezone.utc) < deadline:
         now = dt.datetime.now(dt.timezone.utc)
@@ -107,9 +114,12 @@ def main():
                 continue
 
         with_next = now - next_cached >= NEXT_EVERY
-        games = write_nfl_cache(token, include_next=with_next)  # never raises
-        if with_next and games is not None:
+        nfl_games = write_nfl_cache(token, include_next=with_next)  # never raises
+        if with_next and nfl_games is not None:
             next_cached = now
+        nba_games = write_nba_cache(token, live=True)  # never raises
+        games = None if nfl_games is None and nba_games is None \
+            else (nfl_games or []) + (nba_games or [])
         if games is None:
             misses += 1
             print(f"  tick wrote nothing ({misses}/{MAX_MISSES})")

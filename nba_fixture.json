@@ -1,0 +1,282 @@
+{
+ "season": {
+  "type": 1,
+  "year": 2027
+ },
+ "events": [
+  {
+   "id": "401898388",
+   "date": "2026-10-05T23:00Z",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "id": "1",
+        "displayName": "Atlanta Hawks",
+        "abbreviation": "ATL"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "id": "29",
+        "displayName": "Memphis Grizzlies",
+        "abbreviation": "MEM"
+       }
+      }
+     ],
+     "status": {
+      "clock": 0.0,
+      "displayClock": "0.0",
+      "period": 0,
+      "type": {
+       "id": "1",
+       "name": "STATUS_SCHEDULED",
+       "state": "pre",
+       "completed": false,
+       "description": "Scheduled",
+       "detail": "Mon, October 5th at 7:00 PM EDT",
+       "shortDetail": "10/5 - 7:00 PM EDT"
+      }
+     },
+     "odds": [
+      {
+       "details": "ATL -3.5",
+       "spread": -3.5,
+       "overUnder": 232.5,
+       "moneyline": {
+        "displayName": "Moneyline",
+        "shortDisplayName": "ML",
+        "home": {
+         "close": {
+          "odds": "-166",
+          "link": {
+           "language": "en-US",
+           "rel": [
+            "home",
+            "desktop",
+            "bets",
+            "draft-kings"
+           ],
+           "href": "https://sportsbook.draftkings.com/gateway?s=__s__&wpcid=__wpcid__&wpsrc=413&wpcn=ESPN&wpscn=Widget&wpcrn=BetSlipDeepLink&wpscid=__wpscid__&wpcrid=xx&preurl=https%3A%2F%2Fsportsbook.draftkings.com%2Fevent%2F34773839%3Foutcomes%3D0ML86592001_1",
+           "text": "Home Bet",
+           "shortText": "Home Bet",
+           "isExternal": true,
+           "isPremium": false,
+           "tracking": {
+            "campaign": "betting-integrations",
+            "tags": {
+             "league": "nba",
+             "sport": "basketball",
+             "gameId": 401898388,
+             "betSide": "home",
+             "betType": "straight"
+            }
+           }
+          }
+         },
+         "open": {
+          "odds": "-162"
+         }
+        },
+        "away": {
+         "close": {
+          "odds": "+140",
+          "link": {
+           "language": "en-US",
+           "rel": [
+            "away",
+            "desktop",
+            "bets",
+            "draft-kings"
+           ],
+           "href": "https://sportsbook.draftkings.com/gateway?s=__s__&wpcid=__wpcid__&wpsrc=413&wpcn=ESPN&wpscn=Widget&wpcrn=BetSlipDeepLink&wpscid=__wpscid__&wpcrid=xx&preurl=https%3A%2F%2Fsportsbook.draftkings.com%2Fevent%2F34773839%3Foutcomes%3D0ML86592001_3",
+           "text": "Away Bet",
+           "shortText": "Away Bet",
+           "isExternal": true,
+           "isPremium": false,
+           "tracking": {
+            "campaign": "betting-integrations",
+            "tags": {
+             "league": "nba",
+             "sport": "basketball",
+             "gameId": 401898388,
+             "betSide": "away",
+             "betType": "straight"
+            }
+           }
+          }
+         },
+         "open": {
+          "odds": "+136"
+         }
+        }
+       },
+       "pointSpread": {
+        "home": {
+         "open": {
+          "line": "-2.5"
+         },
+         "close": {
+          "line": "-3.5"
+         }
+        }
+       },
+       "total": {
+        "over": {
+         "open": {
+          "line": "o232.5"
+         },
+         "close": {
+          "line": "o232.5"
+         }
+        }
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401908947",
+   "date": "2026-10-05T23:00Z",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "id": "8",
+        "displayName": "Detroit Pistons",
+        "abbreviation": "DET"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "id": "21",
+        "displayName": "Phoenix Suns",
+        "abbreviation": "PHX"
+       }
+      }
+     ],
+     "status": {
+      "clock": 0.0,
+      "displayClock": "0.0",
+      "period": 0,
+      "type": {
+       "id": "1",
+       "name": "STATUS_SCHEDULED",
+       "state": "pre",
+       "completed": false,
+       "description": "Scheduled",
+       "detail": "Mon, October 5th at 7:00 PM EDT",
+       "shortDetail": "10/5 - 7:00 PM EDT"
+      }
+     },
+     "odds": [
+      {
+       "details": "DET -3.5",
+       "spread": -3.5,
+       "overUnder": 216.5,
+       "moneyline": {
+        "displayName": "Moneyline",
+        "shortDisplayName": "ML",
+        "home": {
+         "close": {
+          "odds": "-155",
+          "link": {
+           "language": "en-US",
+           "rel": [
+            "home",
+            "desktop",
+            "bets",
+            "draft-kings"
+           ],
+           "href": "https://sportsbook.draftkings.com/gateway?s=__s__&wpcid=__wpcid__&wpsrc=413&wpcn=ESPN&wpscn=Widget&wpcrn=BetSlipDeepLink&wpscid=__wpscid__&wpcrid=xx&preurl=https%3A%2F%2Fsportsbook.draftkings.com%2Fevent%2F34773840%3Foutcomes%3D0ML86592002_1",
+           "text": "Home Bet",
+           "shortText": "Home Bet",
+           "isExternal": true,
+           "isPremium": false,
+           "tracking": {
+            "campaign": "betting-integrations",
+            "tags": {
+             "league": "nba",
+             "sport": "basketball",
+             "gameId": 401908947,
+             "betSide": "home",
+             "betType": "straight"
+            }
+           }
+          }
+         },
+         "open": {
+          "odds": "-155"
+         }
+        },
+        "away": {
+         "close": {
+          "odds": "+130",
+          "link": {
+           "language": "en-US",
+           "rel": [
+            "away",
+            "desktop",
+            "bets",
+            "draft-kings"
+           ],
+           "href": "https://sportsbook.draftkings.com/gateway?s=__s__&wpcid=__wpcid__&wpsrc=413&wpcn=ESPN&wpscn=Widget&wpcrn=BetSlipDeepLink&wpscid=__wpscid__&wpcrid=xx&preurl=https%3A%2F%2Fsportsbook.draftkings.com%2Fevent%2F34773840%3Foutcomes%3D0ML86592002_3",
+           "text": "Away Bet",
+           "shortText": "Away Bet",
+           "isExternal": true,
+           "isPremium": false,
+           "tracking": {
+            "campaign": "betting-integrations",
+            "tags": {
+             "league": "nba",
+             "sport": "basketball",
+             "gameId": 401908947,
+             "betSide": "away",
+             "betType": "straight"
+            }
+           }
+          }
+         },
+         "open": {
+          "odds": "+130"
+         }
+        }
+       },
+       "pointSpread": {
+        "home": {
+         "open": {
+          "line": "-3.5"
+         },
+         "close": {
+          "line": "-3.5"
+         }
+        }
+       },
+       "total": {
+        "over": {
+         "open": {
+          "line": "o218.5"
+         },
+         "close": {
+          "line": "o216.5"
+         }
+        }
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

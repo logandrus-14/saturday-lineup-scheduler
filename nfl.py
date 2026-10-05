@@ -54,6 +54,26 @@ def _price(v):
         return None
 
 
+def _open_line(side):
+    """ESPN's opening line for one side — {'open': {'line': '-2.5'}} or
+    'o232.5' for a total — as a number, or None."""
+    v = ((side or {}).get("open") or {}).get("line")
+    if v is None:
+        return None
+    s = str(v).strip().lower().lstrip("ou")
+    if s in ("pk", "pick", "even"):
+        return 0.0
+    return _num(s)
+
+
+def opening(odds):
+    """(opening home spread, opening total) from an odds entry. Logan, Oct 5
+    2026, picking "B · Line moves" for the board: it shows how far each line
+    has moved since it opened."""
+    return (_open_line((odds.get("pointSpread") or {}).get("home")),
+            _open_line((odds.get("total") or {}).get("over")))
+
+
 def _status(comp):
     state = comp.get("status", {}).get("type", {})
     if state.get("completed"):
@@ -133,6 +153,8 @@ def parse(data, prior=None):
             # the same convention as the college games.
             "spread": _num(odds.get("spread")),
             "overUnder": _num(odds.get("overUnder")),
+            "openSpread": opening(odds)[0],
+            "openOverUnder": opening(odds)[1],
             "homeMoneyline": _price(ml.get("home", {}).get("close", {})
                                     .get("odds")),
             "awayMoneyline": _price(ml.get("away", {}).get("close", {})
@@ -140,7 +162,8 @@ def parse(data, prior=None):
         }
         before = prior_by_id.get(game["id"])
         if before:
-            for k in ("spread", "overUnder", "homeMoneyline", "awayMoneyline"):
+            for k in ("spread", "overUnder", "homeMoneyline", "awayMoneyline",
+                      "openSpread", "openOverUnder"):
                 if game[k] is None:
                     game[k] = before.get(k)
         games.append(game)

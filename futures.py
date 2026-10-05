@@ -22,9 +22,19 @@ import json
 import re
 import urllib.request
 
-CORE = "https://sports.core.api.espn.com/v2/sports/football/leagues"
-SITE = "https://site.api.espn.com/apis/site/v2/sports/football"
-LEAGUES = {"ncaaf": "college-football", "nfl": "nfl"}
+CORE = "https://sports.core.api.espn.com/v2/sports/{sport}/leagues"
+SITE = "https://site.api.espn.com/apis/site/v2/sports/{sport}"
+LEAGUES = {"ncaaf": "college-football", "nfl": "nfl", "nba": "nba"}
+# The NBA (Oct 5 2026) is ESPN's basketball, not football.
+SPORTS = {"ncaaf": "football", "nfl": "football", "nba": "basketball"}
+
+
+def _core(league):
+    return CORE.format(sport=SPORTS[league])
+
+
+def _site(league):
+    return SITE.format(sport=SPORTS[league])
 
 
 def _get(url):
@@ -79,6 +89,8 @@ def market_name(raw, league):
             if long in n:
                 return f"{short} Champion"
         return None
+    if league == "nba":
+        return _nba_market(n)
     if "Super Bowl" in n:
         return "Super Bowl Champion"
     if "MVP" in n:
@@ -94,9 +106,34 @@ def market_name(raw, league):
     return None
 
 
+def _nba_market(n):
+    """NBA markets worth a board: the title, each conference, the two
+    awards people argue about, and the divisions. The in-season tournament
+    groups and the smaller awards are left out."""
+    if n == "NBA - Winner":
+        return "NBA Champion"
+    if "In-Season" in n:
+        return None
+    if "Eastern Conference - Winner" in n:
+        return "East Champion"
+    if "Western Conference - Winner" in n:
+        return "West Champion"
+    if "Regular Season MVP" in n:
+        return "NBA MVP"
+    if "Rookie of the Year" in n:
+        return "Rookie of the Year"
+    m = re.search(r"(Atlantic|Central|Southeast|Northwest|Pacific|Southwest) "
+                  r"Division", n)
+    if m:
+        return f"{m.group(1)} Division"
+    return None
+
+
 # Order on the board: the big one first.
-_RANK = ["National Champion", "Super Bowl Champion", "Reach the Playoff Semifinals",
-         "Heisman Trophy", "NFL MVP", "AFC Champion", "NFC Champion"]
+_RANK = ["National Champion", "Super Bowl Champion", "NBA Champion",
+         "Reach the Playoff Semifinals", "Heisman Trophy", "NFL MVP",
+         "AFC Champion", "NFC Champion", "NBA MVP", "East Champion",
+         "West Champion", "Rookie of the Year"]
 
 
 def _rank(name):
@@ -105,9 +142,9 @@ def _rank(name):
 
 def team_names(league):
     """team id -> the name the app uses: the SCHOOL for college ("Ohio
-    State"), the full name for the NFL ("Buffalo Bills") — the same names
+    State"), the full name for the NFL and NBA ("Buffalo Bills") — the names
     the games on the board carry."""
-    data = _get(f"{SITE}/{LEAGUES[league]}/teams?limit=1000")
+    data = _get(f"{_site(league)}/{LEAGUES[league]}/teams?limit=1000")
     out = {}
     for t in data["sports"][0]["leagues"][0]["teams"]:
         t = t["team"]
@@ -124,7 +161,7 @@ def fetch(league, season, prior=None):
         for o in m.get("options", []):
             known[o["id"]] = o["name"]
 
-    listing = _get(f"{CORE}/{LEAGUES[league]}/seasons/{season}/futures?limit=100")
+    listing = _get(f"{_core(league)}/{LEAGUES[league]}/seasons/{season}/futures?limit=100")
     teams = None
     markets = []
     for item in listing.get("items", []):
