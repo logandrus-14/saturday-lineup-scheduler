@@ -73,7 +73,18 @@ def _clock(comp):
 
 
 def season_of(data):
-    return (data.get("season") or {}).get("year")
+    """The season's year (2027 for 2026-27). Asked for a DATE, ESPN leaves
+    out the top-level "season" and carries it under "leagues" and on each
+    event instead — Oct 5 2026, when reading only the top level meant
+    nba_current was never written and the NBA board stayed empty."""
+    for found in (
+        (data.get("season") or {}).get("year"),
+        ((data.get("leagues") or [{}])[0].get("season") or {}).get("year"),
+        ((data.get("events") or [{}])[0].get("season") or {}).get("year"),
+    ):
+        if found:
+            return found
+    return None
 
 
 def parse(data, prior=None):

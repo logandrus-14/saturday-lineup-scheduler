@@ -42,6 +42,13 @@ check("no score before tip-off", (g["homeScore"], g["awayScore"]),
 check("no possession — a basketball scoreboard doesn't say",
       g["possession"], None)
 check("season read from the response", nba.season_of(FIX), 2027)
+# Asked for a date (as the scheduler always asks), ESPN has no top-level
+# "season" — Oct 5 2026's empty NBA board.
+by_date = {k: v for k, v in FIX.items() if k != "season"}
+by_date["leagues"] = [{"season": {"year": 2027}}]
+check("season found when asked for a date", nba.season_of(by_date), 2027)
+check("…or from an event, as a last resort",
+      nba.season_of({"events": [{"season": {"year": 2027}}]}), 2027)
 check("opening spread, for the board's line moves", g["openSpread"], -2.5)
 check("opening total", g["openOverUnder"], 232.5)
 
