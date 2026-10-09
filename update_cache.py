@@ -1056,7 +1056,7 @@ def _line_str(value):
 
 
 def notify_kickoffs(token, project, season, week, slate, now):
-    """"Kickoff - 3 of you took Colorado."
+    """"Kickoff - You, Eric and Zane took Colorado."
 
     The moment this app is built around, pushed rather than only shown. Every
     other pick'em freezes a whole week at once; here each pick reveals at its
@@ -1088,6 +1088,7 @@ def notify_kickoffs(token, project, season, week, slate, now):
         return 0
 
     sent = 0
+    first_names = {}
     for group in fs_list(token, "groups"):
         gid = group["name"].rsplit("/", 1)[-1]
         board = fs_get(token, f"groups/{gid}/board/{season}_{week}")
@@ -1120,10 +1121,12 @@ def notify_kickoffs(token, project, season, week, slate, now):
             if notify.already_sent(lambda p: fs_get(token, p), key):
                 continue
 
-            by_team = {}
-            for team in took.values():
-                by_team[team] = by_team.get(team, 0) + 1
-            body = kickoff_body(by_team)
+            # First names, so the push can say who — see kickoff_body.
+            for uid in took:
+                if uid not in first_names:
+                    doc = fs_get(token, f"users/{uid}")
+                    first_names[uid] = display_name_from(
+                        (doc or {}).get("fields", {})).split(" ")[0]
 
             title = f"{game.get('awayTeam')} @ {game.get('homeTeam')}"
             for uid in took:
@@ -1148,6 +1151,7 @@ def notify_kickoffs(token, project, season, week, slate, now):
                     "kickoff-user", uid, f"{season}_{week}_{game_id}")
                 if notify.already_sent(lambda p: fs_get(token, p), ukey):
                     continue
+                body = kickoff_body(took, first_names, uid)
                 for dev, _ in notify.devices_for(
                         lambda p: fs_list(token, p), uid):
                     notify.send_to_token(token, project, dev, title, body,
@@ -1160,26 +1164,42 @@ def notify_kickoffs(token, project, season, week, slate, now):
     return sent
 
 
-def kickoff_body(by_team):
-    """"All 3 of you took Colorado", or "3 took Colorado, 1 took Miami".
+def kickoff_body(took, names, me):
+    """Who took which side, by name, for one person: "You, Eric and Zane took
+    Colorado." / "You took Colorado. Eric and Zane took Miami."
 
-    Pure, so the plural is covered by a test - and it has to agree with
-    revealSummary in Dart, because the same person can read the notification
-    and then open the app to the banner saying the same thing.
+    Logan, Oct 8 2026: "if you say all 3 of you to a group of 13 people it
+    doesn't make any sense and you wouldn't know which 3 of you it was
+    unless you dig for it". So: names, "you" for the reader, the reader's
+    side first, then the bigger side. More than four on a side folds into
+    "and N others".
+
+    [took] uid -> team; [names] uid -> first name; [me] the reader's uid.
+    Pure, so the wording is covered by test_kickoff_body.py.
     """
-    entries = sorted(by_team.items(), key=lambda kv: -kv[1])
-    if not entries:
+    if not took:
         return "Kickoff."
-    if len(entries) == 1:
-        team, n = entries[0]
-        # Two is "both", not "all" — Logan, Oct 8 2026: "2 of us is not
-        # all of us". Same as revealSummary in Dart.
-        if n == 1:
-            return f"1 of you took {team}."
-        if n == 2:
-            return f"Both of you took {team}."
-        return f"All {n} of you took {team}."
-    return ", ".join(f"{n} took {team}" for team, n in entries) + "."
+    by_team = {}
+    for uid, team in took.items():
+        by_team.setdefault(team, []).append(uid)
+    order = sorted(by_team.items(),
+                   key=lambda kv: (me not in kv[1], -len(kv[1]), kv[0]))
+    sentences = []
+    for team, uids in order:
+        people = (["you"] if me in uids else []) + sorted(
+            names.get(u) or "Someone" for u in uids if u != me)
+        sentences.append(f"{_people(people)} took {team}.")
+    return " ".join(sentences)
+
+
+def _people(people):
+    """"You", "You and Eric", "You, Eric and Zane", "You, Eric, Zane and 4
+    others" — capitalised for the start of a sentence."""
+    if len(people) > 4:
+        people = people[:3] + [f"{len(people) - 3} others"]
+    text = (people[0] if len(people) == 1
+            else ", ".join(people[:-1]) + " and " + people[-1])
+    return text[0].upper() + text[1:]
 
 
 # How soon after a game starts the kickoff notification is still worth
