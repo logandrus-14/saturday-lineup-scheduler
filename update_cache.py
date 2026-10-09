@@ -1172,8 +1172,13 @@ def kickoff_body(by_team):
         return "Kickoff."
     if len(entries) == 1:
         team, n = entries[0]
-        return (f"1 of you took {team}." if n == 1
-                else f"All {n} of you took {team}.")
+        # Two is "both", not "all" — Logan, Oct 8 2026: "2 of us is not
+        # all of us". Same as revealSummary in Dart.
+        if n == 1:
+            return f"1 of you took {team}."
+        if n == 2:
+            return f"Both of you took {team}."
+        return f"All {n} of you took {team}."
     return ", ".join(f"{n} took {team}" for team, n in entries) + "."
 
 
@@ -2473,6 +2478,29 @@ def write_nba_cache(token, live=False):
         return None
 
 
+def notify_fumble_slips(token):
+    """A push for every Fumbling slip that has cashed or fumbled since last
+    time — see fumble_alerts.py. Never raises."""
+    import fumble_alerts
+    import notify
+
+    def send(uid, title, body):
+        for dev, _ in notify.devices_for(lambda p: fs_list(token, p), uid):
+            notify.send_to_token(token, PROJECT, dev, title, body,
+                                 route="/fumbling")
+
+    try:
+        n = fumble_alerts.run(lambda p: fs_get(token, p),
+                              lambda p: fs_list(token, p),
+                              lambda p, f: _fs_patch(token, p, f), send)
+        if n:
+            print(f"fumble alerts: {n} sent")
+        return n
+    except Exception as e:
+        print(f"fumble alerts skipped: {e}")
+        return 0
+
+
 def write_futures_cache(token, season):
     """Fumbling's futures — see futures.py. Never raises.
 
@@ -2538,6 +2566,7 @@ def main():
 
     write_nfl_cache(token, include_next=True)
     write_nba_cache(token)
+    notify_fumble_slips(token)
     write_futures_cache(token, futures_season(dt.datetime.now(dt.timezone.utc)))
 
     # Bail out before spending a single CFBD call if the cache is already

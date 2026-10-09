@@ -45,7 +45,7 @@ import os
 import time
 
 from update_cache import (  # noqa: E402
-    access_token, write_nba_cache, write_nfl_cache)
+    access_token, notify_fumble_slips, write_nba_cache, write_nfl_cache)
 
 MAX_SHIFT = dt.timedelta(hours=5, minutes=30)
 LIVE_INTERVAL = 60
@@ -58,6 +58,9 @@ TOKEN_EVERY = dt.timedelta(minutes=45)  # tokens last an hour
 # scheduled job added it, and the board lost every upcoming game. Doing it
 # from here too means one stale writer can't hide them for long.
 NEXT_EVERY = dt.timedelta(minutes=30)
+# How often the shift looks for Fumbling slips that have cashed or fumbled
+# (fumble_alerts.py) — any league's, college included. Oct 8 2026.
+FUMBLE_EVERY = dt.timedelta(minutes=5)
 MAX_MISSES = 5  # consecutive ticks that wrote nothing
 
 
@@ -141,6 +144,7 @@ def _shift():
     deadline = started + MAX_SHIFT
     minted = started
     next_cached = dt.datetime.fromtimestamp(0, dt.timezone.utc)
+    fumbles_checked = next_cached
     misses = 0
     print(f"NFL/NBA shift start {started:%Y-%m-%d %H:%M}Z")
 
@@ -174,6 +178,9 @@ def _shift():
             time.sleep(LIVE_INTERVAL)
             continue
         misses = 0
+        if now - fumbles_checked >= FUMBLE_EVERY:
+            notify_fumble_slips(token)  # never raises
+            fumbles_checked = now
 
         delay = next_delay(games, now, deadline)
         if delay is None:
