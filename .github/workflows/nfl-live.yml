@@ -39,10 +39,18 @@ concurrency:
   group: nfl-live-refresh
   cancel-in-progress: false
 
+# To start the next shift (below). A run started by the workflow's own
+# token with workflow_dispatch is one of the few GitHub DOES run promptly.
+permissions:
+  actions: write
+  contents: read
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 340
+    # Past the shift's own 5½ hours (MAX_SHIFT), so it always ends itself
+    # and hands over — a run GitHub cuts off can't.
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -51,4 +59,12 @@ jobs:
       - name: Refresh NFL and NBA scores while games are live
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        id: shift
         run: python3 nfl_live.py
+      # Each shift hands over to the next — see nfl_live.py. Only after a
+      # clean shift, so a crash can't spin up a run every few seconds.
+      - name: Start the next shift
+        if: steps.shift.outputs.chain == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run nfl-live.yml --ref "${{ github.ref_name }}"

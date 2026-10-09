@@ -8,7 +8,9 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from nfl_live import IDLE_INTERVAL, LIVE_INTERVAL, next_delay  # noqa: E402
+from nfl_live import (  # noqa: E402
+    IDLE_INTERVAL, IDLE_RECHECK, LIVE_INTERVAL, chain_on, idle_delay,
+    next_delay)
 
 checks = failures = 0
 
@@ -45,6 +47,16 @@ check("a kickoff after the shift ends: stand down",
 check("everything final: done",
       next_delay([g("final", -200), g("final", -10)], now, end), None)
 check("no games: done", next_delay([], now, end), None)
+
+# ── Handing over (Oct 8 2026) ─────────────────────────────────────────────
+check("in season, a shift starts the next one", chain_on(now), True)
+check("in July, between seasons, it lets the chain go",
+      chain_on(dt.datetime(2027, 7, 10, tzinfo=dt.timezone.utc)), False)
+check("idle: look again in half an hour", idle_delay(now, end), IDLE_RECHECK)
+check("idle near the end: only until the deadline",
+      idle_delay(end - dt.timedelta(minutes=5), end), 300)
+check("idle at the deadline: a second, never zero or negative",
+      idle_delay(end, end), 1)
 
 print(f"{checks - failures}/{checks} NFL shift checks pass")
 sys.exit(1 if failures else 0)

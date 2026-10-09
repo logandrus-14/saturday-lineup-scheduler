@@ -26,6 +26,16 @@ family, so each tick also refreshes today's (and yesterday's, for games past
 midnight) NBA games, and the shift stays awake while either league has
 something on. The workflow gained nightly starts for the NBA.
 
+**SHIFTS HAND OVER TO EACH OTHER (Oct 8 2026).** GitHub's timer could not
+be trusted: the evening start was run four hours late on Oct 5, and on Oct 8
+all ten evening starts were skipped — Logan: "bets arent working". So a
+shift no longer ends when nothing is on. It idles (re-checking every half
+hour) until its time is up, then tells the workflow to start the next shift
+(`chain=yes` in $GITHUB_OUTPUT → `gh workflow run`), which GitHub runs at
+once. In season that is one unbroken watch; the timed starts remain only to
+restart the chain if it ever breaks. July, between the seasons, it lets
+the chain go.
+
     FIREBASE_SERVICE_ACCOUNT=... python3 nfl_live.py
 """
 
@@ -89,7 +99,42 @@ def next_delay(games, now, deadline):
     return int((first - WARMUP - now).total_seconds())
 
 
+# How often an idle shift looks again when nothing is within reach.
+IDLE_RECHECK = 30 * 60
+
+
+def chain_on(now):
+    """Whether this shift should start the next one. Always, except in July
+    — the one month with neither an NFL nor an NBA game."""
+    return now.month != 7
+
+
+def idle_delay(now, deadline):
+    """Nothing within reach, but the chain will carry on: wait, at most
+    IDLE_RECHECK, and no later than the deadline — a game added meanwhile
+    (tomorrow's night of NBA, once it is tomorrow) is then caught."""
+    left = int((deadline - now).total_seconds())
+    return max(1, min(IDLE_RECHECK, left))
+
+
+def _hand_over(chain):
+    """Tell the workflow whether to start the next shift."""
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a") as f:
+            f.write(f"chain={'yes' if chain else 'no'}\n")
+    print(f"  next shift: {'starting' if chain else 'not started'}")
+
+
 def main():
+    now = dt.datetime.now(dt.timezone.utc)
+    try:
+        _shift()
+    finally:
+        _hand_over(chain_on(now))
+
+
+def _shift():
     key = json.loads(os.environ["FIREBASE_SERVICE_ACCOUNT"])
     token = access_token(key)
     started = dt.datetime.now(dt.timezone.utc)
@@ -124,7 +169,7 @@ def main():
             misses += 1
             print(f"  tick wrote nothing ({misses}/{MAX_MISSES})")
             if misses >= MAX_MISSES:
-                print("  ending the shift; the next scheduled run starts clean")
+                print("  ending the shift; the next one starts clean")
                 return
             time.sleep(LIVE_INTERVAL)
             continue
@@ -132,8 +177,14 @@ def main():
 
         delay = next_delay(games, now, deadline)
         if delay is None:
-            print("  nothing live or within reach — shift over")
-            return
+            if not chain_on(now):
+                print("  nothing live or within reach — shift over")
+                return
+            delay = idle_delay(now, deadline)
+            print(f"  nothing within reach — looking again in {delay}s",
+                  flush=True)
+            time.sleep(delay)
+            continue
         live = sum(1 for g in games if g.get("status") == "live")
         print(f"  {live} live — next in {delay}s", flush=True)
         time.sleep(delay)
