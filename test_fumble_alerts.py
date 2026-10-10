@@ -86,12 +86,24 @@ check("future label", fa.leg_label(leg("future", ht="Ohio State")),
       "Ohio State")
 check("cashed text",
       fa.alert_text(slip([leg("moneyline", price=140)]), "won", 24.0),
-      ("Cashed 💰", "BYU to win hit. +$14.00 to your pretend bank."))
+      ("Fumbled 💸", "BYU to win hit. +$14.00 — would have been real money."))
 check("fumbled text",
       fa.alert_text(slip([leg("spread", line=-3.5), leg("total", line=50.5)],
                          stake=1500), "lost", 0.0),
-      ("Fumbled 🏈",
-       "BYU −3.5 + Over 50.5 missed. −$1,500.00 from your pretend bank."))
+      ("Bullet dodged 😮‍💨",
+       "BYU −3.5 + Over 50.5 missed. Imagine if that was real. Actually, "
+       "don't. That would have cost you $1,500.00."))
+check("a near miss is rubbed in",
+      fa.roast(slip([leg("spread", line=-10.5)]),
+               lambda g: final),
+      "Missed by 0.5. You'll be thinking about that one in the shower.")
+check("a long parlay counts its hits",
+      fa.roast(slip([leg("moneyline"), leg("moneyline", home=False),
+                     leg("total", line=41.5), leg("total", line=60.5)]),
+               lambda g: final),
+      "2 of 4 legs hit. That's a participation trophy, not a payout.")
+check("otherwise one of the stock roasts",
+      fa.roast(slip([leg("moneyline", home=False)])) in fa.ROASTS, True)
 check("a long parlay is named by its size",
       fa.alert_text(slip([leg("moneyline")] * 5), "lost", 0)[1]
       .startswith("Your 5-leg parlay missed."), True)
@@ -140,6 +152,10 @@ slips = {
                                      price=150))]}}}),
         fs_doc("x/live", {"stake": {"doubleValue": 10.0}, "legs": {"arrayValue": {
             "values": [leg_value(leg("moneyline", gid="nfl2", week=205))]}}}),
+        fs_doc("x/chicken", {"stake": {"doubleValue": 10.0},
+                             "cashOut": {"doubleValue": 6.5},
+                             "legs": {"arrayValue": {"values": [leg_value(
+                                 leg("moneyline", gid="nfl2", week=205))]}}}),
     ],
 }
 
@@ -173,7 +189,7 @@ db["cache/nfl_2026_2_5"]["fields"]["gamesJson"]["stringValue"] = json.dumps([
 ])
 sent = fa.run(fs_get, fs_list, fs_patch, lambda u, t, b: told.append((u, t, b)))
 check("a slip that settles afterwards is told, once", sent, 1)
-check("…as cashed", told[-1][1], "Cashed 💰")
+check("…as fumbled (a win)", told[-1][1], "Fumbled 💸")
 sent = fa.run(fs_get, fs_list, fs_patch, lambda u, t, b: told.append((u, t, b)))
 check("…and never again", sent, 0)
 

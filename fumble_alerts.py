@@ -99,17 +99,69 @@ def money(v):
     return f"${v:,.2f}"
 
 
-def alert_text(slip, status, payout):
-    """(title, body) for a cashed or fumbled slip."""
+# Roasts for a slip that missed — Logan, Oct 10 2026: "Add the roast
+# pushes thats super funny." Picked by what happened, else by the slip's id
+# (stable, so a re-run would say the same thing).
+ROASTS = [
+    "Thank goodness this is fake.",
+    "Your financial advisor just felt a chill.",
+    "The house sends its regards.",
+    "Bold strategy. Didn't work, but bold.",
+    "Somewhere a sportsbook is disappointed this wasn't real.",
+]
+
+
+def _stable(s):
+    return sum(ord(c) for c in s)
+
+
+def _miss_by(leg, game):
+    """How far a spread or total missed by, or None."""
+    if not game or not game.get("final"):
+        return None
+    h, a = game.get("home"), game.get("away")
+    if h is None or a is None:
+        return None
+    if leg["market"] == "spread":
+        m = (h - a if leg["home"] else a - h) + leg["line"]
+    elif leg["market"] == "total":
+        m = (h + a - leg["line"]) * (1 if leg["home"] else -1)
+    else:
+        return None
+    return -m if m < 0 else None
+
+
+def roast(slip, game_of=None):
+    """One line of abuse for a slip that missed."""
+    legs = slip["legs"]
+    if len(legs) >= 4 and game_of:
+        hit = sum(1 for l in legs if leg_result(l, game_of(l["gameId"])) == "won")
+        return (f"{hit} of {len(legs)} legs hit. That's a participation "
+                f"trophy, not a payout.")
+    if len(legs) == 1 and game_of:
+        by = _miss_by(legs[0], game_of(legs[0]["gameId"]))
+        if by is not None and by <= 1:
+            return (f"Missed by {_num(by)}. You'll be thinking about that "
+                    f"one in the shower.")
+    if slip["stake"] >= 1000:
+        return "Imagine if that was real. Actually, don't."
+    return ROASTS[_stable(slip.get("id", "")) % len(ROASTS)]
+
+
+def alert_text(slip, status, payout, game_of=None):
+    """(title, body) for a slip that hit or missed."""
     legs = slip["legs"]
     what = (" + ".join(leg_label(l) for l in legs) if len(legs) <= 3
             else f"Your {len(legs)}-leg parlay")
+    # Logan, Oct 10 2026: a win is FUMBLED (it would have been real money),
+    # a loss is DODGED (lucky it wasn't).
     if status == "won":
-        return ("Cashed 💰",
-                f"{what} hit. +{money(payout - slip['stake'])} to your "
-                f"pretend bank.")
-    return ("Fumbled 🏈",
-            f"{what} missed. −{money(slip['stake'])} from your pretend bank.")
+        return ("Fumbled 💸",
+                f"{what} hit. +{money(payout - slip['stake'])} — would have "
+                f"been real money.")
+    return ("Bullet dodged 😮‍💨",
+            f"{what} missed. {roast(slip, game_of)} That would have cost you "
+            f"{money(slip['stake'])}.")
 
 
 # ── Reading ───────────────────────────────────────────────────────────────
@@ -147,7 +199,8 @@ def parse_slip(doc):
             "price": int(l.get("price", -110)),
         })
     return {"id": doc["name"].rsplit("/", 1)[-1], "legs": legs,
-            "stake": float(f.get("stake", 0))}
+            "stake": float(f.get("stake", 0)),
+            "cashOut": f.get("cashOut")}
 
 
 def cache_doc_for(leg):
@@ -217,7 +270,9 @@ def run(fs_get, fs_list, fs_patch, send):
         uid = owner["name"].rsplit("/", 1)[-1]
         for doc in fs_list(f"fumbling/{uid}/slips"):
             slip = parse_slip(doc)
-            if not slip["legs"]:
+            # Cashed out early (Oct 10 2026): the owner settled it by hand,
+            # so there is nothing to tell them when its games finish.
+            if not slip["legs"] or slip["cashOut"] is not None:
                 continue
             by_id = {l["gameId"]: l for l in slip["legs"]}
             status, payout = slip_result(slip, lambda gid: game_of(by_id[gid]))
@@ -227,7 +282,8 @@ def run(fs_get, fs_list, fs_patch, send):
             if notify.already_sent(fs_get, key):
                 continue
             if launched:
-                title, body = alert_text(slip, status, payout)
+                title, body = alert_text(
+                    slip, status, payout, lambda gid: game_of(by_id[gid]))
                 send(uid, title, body)
                 sent += 1
             notify.record_sent(fs_patch, key, "fumble", uid)
