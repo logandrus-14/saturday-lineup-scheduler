@@ -18,6 +18,7 @@ announced.
 Pushes are skipped for a slip that only PUSHED (stake back): nothing
 happened worth a notification.
 """
+import datetime as dt
 import json
 
 import notify
@@ -247,6 +248,11 @@ def future_game(leg, results):
     return {"final": True, "home": 1 if won else 0, "away": 0 if won else 1}
 
 
+def _now():
+    return (dt.datetime.now(dt.timezone.utc).isoformat()
+            .replace("+00:00", "Z"))
+
+
 # ── The pass ──────────────────────────────────────────────────────────────
 
 def run(fs_get, fs_list, fs_patch, send):
@@ -266,6 +272,10 @@ def run(fs_get, fs_list, fs_patch, send):
         return games.get(leg["gameId"])
 
     sent = 0
+    # Open slips per game, for the Board's Popular tab — Logan, Oct 12 2026:
+    # "Can we add a popular tab to the board". Phones can only read their
+    # own and their friends' slips; this pass reads everyone's anyway.
+    popular = {}
     for owner in fs_list("fumbling"):
         uid = owner["name"].rsplit("/", 1)[-1]
         for doc in fs_list(f"fumbling/{uid}/slips"):
@@ -276,6 +286,9 @@ def run(fs_get, fs_list, fs_patch, send):
                 continue
             by_id = {l["gameId"]: l for l in slip["legs"]}
             status, payout = slip_result(slip, lambda gid: game_of(by_id[gid]))
+            if status == "open":
+                for gid in by_id:
+                    popular[gid] = popular.get(gid, 0) + 1
             if status not in ("won", "lost"):
                 continue
             key = notify.dedupe_key("fumble", uid, slip["id"])
@@ -287,6 +300,10 @@ def run(fs_get, fs_list, fs_patch, send):
                 send(uid, title, body)
                 sent += 1
             notify.record_sent(fs_patch, key, "fumble", uid)
+    fs_patch("cache/fumble_popular", {
+        "countsJson": {"stringValue": json.dumps(popular, sort_keys=True)},
+        "updatedAt": {"timestampValue": _now()},
+    })
     if not launched:
         notify.record_sent(fs_patch, LAUNCH_KEY, "fumble", "launch")
         print("  fumble alerts: launched — every slip already settled marked "

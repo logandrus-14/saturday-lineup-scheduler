@@ -181,6 +181,9 @@ check("…but marks what had already settled",
       "notifications/fumble__u1__won" in db, True)
 check("…and leaves the launch marker", "notifications/fumble__launch" in db,
       True)
+check("open slips are counted per game for Popular",
+      json.loads(db["cache/fumble_popular"]["fields"]["countsJson"]
+                 ["stringValue"]), {"nfl2": 1})
 
 # The live game finishes: the home side wins.
 db["cache/nfl_2026_2_5"]["fields"]["gamesJson"]["stringValue"] = json.dumps([
