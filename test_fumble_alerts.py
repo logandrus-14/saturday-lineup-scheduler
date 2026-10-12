@@ -77,6 +77,17 @@ check("a pushed leg drops out of a parlay", (s, round(p, 2)), ("won", 24.0))
 s, p = fa.slip_result(slip([leg("moneyline", gid="g3")]), games.get)
 check("every leg pushed: stake back", (s, p), ("push", 10.0))
 
+s, p = fa.slip_result(dict(slip([leg("moneyline", price=140)]),
+                           payoutMul=2), games.get)
+check("a chaos card's payoutMul scales a win", (s, round(p, 2)), ("won", 48.0))
+s, p = fa.slip_result(dict(slip([leg("moneyline", home=False)]),
+                           miracle=True), games.get)
+check("Miracle Comeback turns a loss into a push", (s, p), ("push", 10.0))
+check("Midnight Trade flips a spread, line and all",
+      fa.flipped(leg("spread", line=-3.5))["home"], False)
+check("…to the other side's number",
+      fa.flipped(leg("spread", line=-3.5))["line"], 3.5)
+
 # ── words ────────────────────────────────────────────────────────────────
 check("spread label", fa.leg_label(leg("spread", line=-3.5)), "BYU −3.5")
 check("pick'em label", fa.leg_label(leg("spread", line=0)), "BYU PK")

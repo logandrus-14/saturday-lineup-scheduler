@@ -2500,7 +2500,8 @@ def write_nba_cache(token, live=False):
 
 def notify_fumble_slips(token):
     """A push for every Fumbling slip that has cashed or fumbled since last
-    time — see fumble_alerts.py. Never raises."""
+    time — see fumble_alerts.py — and the friend games' pushes
+    (chaos_alerts.py). Never raises."""
     import fumble_alerts
     import notify
 
@@ -2509,16 +2510,29 @@ def notify_fumble_slips(token):
             notify.send_to_token(token, PROJECT, dev, title, body,
                                  route="/fumbling")
 
+    n = 0
     try:
         n = fumble_alerts.run(lambda p: fs_get(token, p),
                               lambda p: fs_list(token, p),
                               lambda p, f: _fs_patch(token, p, f), send)
         if n:
             print(f"fumble alerts: {n} sent")
-        return n
     except Exception as e:
         print(f"fumble alerts skipped: {e}")
-        return 0
+    # The friend games ride along (Oct 12 2026): cards played on you, duel
+    # challenges, bets on your slip, the Commissioner's Monday report — see
+    # chaos_alerts.py. Its own failure, never fumble_alerts'.
+    try:
+        import chaos_alerts
+        c = chaos_alerts.run(lambda p: fs_get(token, p),
+                             lambda p: fs_list(token, p),
+                             lambda p, f: _fs_patch(token, p, f), send)
+        if c:
+            print(f"chaos alerts: {c} sent")
+        n += c
+    except Exception as e:
+        print(f"chaos alerts skipped: {e}")
+    return n
 
 
 def write_futures_cache(token, season):

@@ -56,11 +56,25 @@ def leg_result(leg, game):
     return "won" if (total > leg["line"]) == leg["home"] else "lost"
 
 
+def flipped(leg):
+    """Mirrors FumbleLeg.flipped: the other side, same line and price."""
+    if leg["market"] == "future":
+        return leg
+    out = dict(leg, home=not leg["home"])
+    if leg["market"] == "spread":
+        out["line"] = -leg["line"]
+    return out
+
+
 def slip_result(slip, game_of):
     """(status, payout). Mirrors slipResult: lost the moment any leg loses,
-    open while any is undecided, a push if every leg pushed, else won."""
+    open while any is undecided, a push if every leg pushed, else won. A
+    Miracle Comeback turns a loss into a push; a chaos card's payoutMul
+    scales a win."""
     legs = [leg_result(l, game_of(l["gameId"])) for l in slip["legs"]]
     if "lost" in legs:
+        if slip.get("miracle"):
+            return "push", slip["stake"]
         return "lost", 0.0
     if "open" in legs:
         return "open", None
@@ -70,7 +84,7 @@ def slip_result(slip, game_of):
     for l, r in zip(slip["legs"], legs):
         if r == "won":
             dec *= decimal_odds(l["price"])
-    return "won", slip["stake"] * dec
+    return "won", slip["stake"] * dec * (slip.get("payoutMul") or 1)
 
 
 # ── Words ─────────────────────────────────────────────────────────────────
@@ -199,9 +213,15 @@ def parse_slip(doc):
             "line": float(l.get("line", 0)),
             "price": int(l.get("price", -110)),
         })
+    stolen = f.get("stolen")
+    if stolen is not None:
+        legs = [flipped(l) if i == int(stolen) else l
+                for i, l in enumerate(legs)]
     return {"id": doc["name"].rsplit("/", 1)[-1], "legs": legs,
             "stake": float(f.get("stake", 0)),
-            "cashOut": f.get("cashOut")}
+            "cashOut": f.get("cashOut"),
+            "payoutMul": f.get("payoutMul"),
+            "miracle": bool(f.get("miracle"))}
 
 
 def cache_doc_for(leg):
