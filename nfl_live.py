@@ -45,7 +45,8 @@ import os
 import time
 
 from update_cache import (  # noqa: E402
-    access_token, notify_fumble_slips, write_nba_cache, write_nfl_cache)
+    READS, access_token, notify_fumble_slips, write_nba_cache,
+    write_nfl_cache)
 
 MAX_SHIFT = dt.timedelta(hours=5, minutes=30)
 LIVE_INTERVAL = 60
@@ -193,7 +194,9 @@ def _shift():
             time.sleep(delay)
             continue
         live = sum(1 for g in games if g.get("status") == "live")
-        print(f"  {live} live — next in {delay}s", flush=True)
+        # Running totals, for the free plan's 50,000 a day (Oct 12 2026).
+        print(f"  {live} live — {READS['made']} reads so far "
+              f"({READS['saved']} remembered) — next in {delay}s", flush=True)
         time.sleep(delay)
 
 

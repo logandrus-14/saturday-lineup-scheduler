@@ -144,7 +144,10 @@ def _send_write(req):
         _dry_writes.append(path)
         print(f"    DRY RUN — would write {path}")
         return b""
-    return urllib.request.urlopen(req, timeout=20).read()
+    out = urllib.request.urlopen(req, timeout=20).read()
+    if "/documents/" in req.full_url:
+        written(req.full_url.split("/documents/", 1)[-1].split("?")[0])
+    return out
 
 
 def dry_run_summary():
@@ -437,18 +440,138 @@ def write_json_cache(token, doc_id, payload):
 # never stop picks revealing.
 
 
+# ─── Read memory: the free plan's 50,000 reads a day ─────────────────────
+#
+# Oct 12 2026. Saturdays were reading the database 75,000–87,000 times a
+# day, and on the free plan Firestore STOPS ANSWERING at 50,000 until
+# midnight Pacific — the app would go dark mid-afternoon on the one day it
+# matters. Logan cannot be charged, so staying under it is not optional.
+#
+# Almost all of it was this process re-reading the same documents. One
+# live tick listed every group about six times (once per notification
+# pass), re-read every board and every member's lineup two or three times,
+# and did the same again sixty seconds later. Measured on Oct 12: one
+# update_cache run was 200–400 reads.
+#
+# So reads are remembered, by path:
+#
+#   * EVERYTHING for TICK_MEMORY seconds — shorter than the 60-second tick,
+#     so each tick still sees fresh data, but the six passes inside one
+#     tick share one read.
+#   * Slow-moving things for longer (SLOW_MEMORY): the group list, profiles,
+#     and device tokens.
+#   * A member's LINEUP for SLOW_MEMORY too, but never across a kickoff:
+#     once any game kicks off after it was read, it is read again, so the
+#     board reveals the pick as it stood at kickoff and not ten minutes
+#     earlier. Picks lock at kickoff, so between kickoffs only the count of
+#     filled slots can change, and that can be a few minutes behind.
+#   * A sent notification forever: sent stays sent. An UNSENT one is never
+#     remembered — another process may send it any second, and remembering
+#     "not sent" is how a push goes out twice.
+#
+# Every write this process makes forgets that document (and its
+# collection's list) on the way out — see written(). So nothing here can
+# serve this process its own stale data.
+TICK_MEMORY = 45
+SLOW_MEMORY = 10 * 60
+_memory = {}            # path -> (read at, value)
+_kickoffs = []          # every kickoff on the current slate
+READS = {"made": 0, "saved": 0}
+
+
+def note_kickoffs(times):
+    """The slate's kickoffs, so a lineup read before one is read again
+    after it. The live shifts call this every tick."""
+    global _kickoffs
+    _kickoffs = sorted(t for t in times if t is not None)
+
+
+def _memory_life(path):
+    parts = path.split("/")
+    if path in ("groups", "users"):
+        return SLOW_MEMORY
+    if parts[0] == "users" and (len(parts) == 2 or parts[2:3] == ["devices"]):
+        return SLOW_MEMORY
+    if parts[0] == "users" and parts[2:3] == ["lineups"]:
+        # Only when the kickoffs are known — without them nothing would
+        # tell a remembered lineup that a game had started.
+        return SLOW_MEMORY if _kickoffs else TICK_MEMORY
+    return TICK_MEMORY
+
+
+def _remembered(path):
+    hit = _memory.get(path)
+    if hit is None:
+        return None
+    at, value = hit
+    now = dt.datetime.now(dt.timezone.utc)
+    if path.startswith("notifications/"):
+        return hit  # only ever stored when sent
+    if (now - at).total_seconds() >= _memory_life(path):
+        return None
+    if "/lineups/" in path and any(at < k <= now for k in _kickoffs
+                                   + _own_kickoffs(value)):
+        return None
+    return hit
+
+
+def _own_kickoffs(lineup_doc):
+    """The kickoffs a lineup's own picks carry — in case one isn't on the
+    slate the shift knows about."""
+    out = []
+    for v in slots_of(lineup_doc).values():
+        stamped = v.get("mapValue", {}).get("fields", {}).get(
+            "kickoffAt", {}).get("timestampValue")
+        if stamped:
+            out.append(dt.datetime.fromisoformat(
+                stamped.replace("Z", "+00:00")))
+    return out
+
+
+def _remember(path, value):
+    if path.startswith("notifications/") and value is None:
+        return
+    _memory[path] = (dt.datetime.now(dt.timezone.utc), value)
+
+
+def written(path):
+    """This process just wrote [path]: forget it and its collection's list.
+    A notification record is the exception — writing one means it's sent."""
+    _memory.pop(path, None)
+    _memory.pop(path.rsplit("/", 1)[0], None)
+    if path.startswith("notifications/"):
+        _remember(path, {"fields": {}})
+
+
+def forget_reads():
+    """Start clean — for tests, and for a shift whose token was renewed."""
+    _memory.clear()
+
+
 def fs_get(token, path):
+    hit = _remembered(path)
+    if hit is not None:
+        READS["saved"] += 1
+        return hit[1]
+    READS["made"] += 1
     req = urllib.request.Request(f"{FS}/{PARENT}/{path}",
                                  headers={"Authorization": f"Bearer {token}"})
     try:
-        return json.load(urllib.request.urlopen(req, timeout=20))
+        doc = json.load(urllib.request.urlopen(req, timeout=20))
     except urllib.error.HTTPError as e:
         if e.code == 404:
+            _remember(path, None)
             return None
         raise
+    _remember(path, doc)
+    return doc
 
 
 def fs_list(token, collection):
+    hit = _remembered(collection)
+    if hit is not None:
+        READS["saved"] += max(1, len(hit[1]))
+        return list(hit[1])
     docs, page = [], None
     while True:
         url = f"{FS}/{PARENT}/{collection}?pageSize=300"
@@ -460,7 +583,10 @@ def fs_list(token, collection):
         docs.extend(body.get("documents", []))
         page = body.get("nextPageToken")
         if not page:
-            return docs
+            # A list costs a read per document, and one even when empty.
+            READS["made"] += max(1, len(docs))
+            _remember(collection, docs)
+            return list(docs)
 
 
 def slots_of(lineup_doc):
@@ -1534,6 +1660,7 @@ def fs_delete(token, path):
     except urllib.error.HTTPError as e:
         if e.code != 404:
             raise
+    written(path)
 
 
 def _kickoff_label(start_date):
@@ -2775,6 +2902,9 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+        # The free plan's 50,000 a day — see "Read memory" (Oct 12 2026).
+        print(f"database reads this run: {READS['made']} "
+              f"({READS['saved']} remembered)")
     except QuotaExhausted:
         # Exit 0 on purpose. Running out of monthly calls is expected and
         # self-correcting, and a red X every five minutes until the plan

@@ -38,9 +38,10 @@ import urllib.error
 import urllib.request
 
 from update_cache import (  # noqa: E402
-    FS, PARENT, QuotaExhausted, access_token, cached_games, cfbd_get,
-    current_season, current_week, fs_get, opening_week_split_on, record_run,
-    send_notifications, write_boards, write_global_standings,
+    FS, PARENT, READS, QuotaExhausted, access_token, cached_games, cfbd_get,
+    current_season, current_week, fs_get, note_kickoffs, opening_week_split_on,
+    record_run, send_notifications, write_boards, write_global_standings,
+    written,
 )
 from scoring import (apply_scoreboard, carry_live_forward,  # noqa: E402
                      cfbd_week_for, fbs_only, games_in_app_week, build_slate)
@@ -114,6 +115,7 @@ def write_slate(token, season, week, games, lines):
         headers={"Authorization": f"Bearer {token}",
                  "Content-Type": "application/json"})
     urllib.request.urlopen(req, timeout=20).read()
+    written(f"cache/slate_{season}_{week}")
 
 
 def cached_lines(token, season, week):
@@ -249,6 +251,13 @@ def _counting_slates(token, season, through_week):
         slates[wk] = build_slate(json.loads(games_raw),
                                  json.loads(lines_raw or "[]"))
     return slates
+
+
+def _kickoff(g):
+    try:
+        return dt.datetime.fromisoformat(g["startDate"].replace("Z", "+00:00"))
+    except (KeyError, AttributeError, ValueError):
+        return None
 
 
 def main():
@@ -407,6 +416,10 @@ def main():
         # filled, so a real update always wins.
         games = carry_live_forward(games, published)
         published = games
+        # So a lineup remembered before a kickoff is read again after it —
+        # see "Read memory" in update_cache.py.
+        note_kickoffs([_kickoff(g) for g in games])
+        reads_before = dict(READS)
 
         # A tick that got its data resets the run — MAX_TICK_FAILURES counts
         # CONSECUTIVE misses, because an afternoon with a dozen scattered
@@ -488,7 +501,12 @@ def main():
         delay = next_delay(games, now)
         live = sum(1 for g in games if status_of(g) == "live")
         final = sum(1 for g in games if status_of(g) == "final")
+        # Database reads this tick, and how many the memory saved — the
+        # number that has to stay small for the free plan (Oct 12 2026).
+        made = READS["made"] - reads_before["made"]
+        saved = READS["saved"] - reads_before["saved"]
         print(f"  tick {ticks}: {live} live, {final} final"
+              f" — {made} reads ({saved} remembered)"
               f" — {'stopping' if delay is None else f'next in {delay}s'}",
               flush=True)
 
