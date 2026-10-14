@@ -75,7 +75,7 @@ lists["crews/c1/plays"].append(doc("crews/c1/plays/p2", {
     "at": s("2026-10-14T12:00:00Z")}))
 ca.run(fs_get, fs_list, fs_patch, send, now=now)
 check("a card played on you tells you, and only you", told[-1][0], "b")
-check("…with the card's nickname", told[-1][1], "🃏 Zane played Rain Delay "
+check("…with the card's nickname", told[-1][1], "🃏 Zane played Weather Delay "
       "on you")
 check("…and what it does", told[-1][2], "You can't place a bet for an hour.")
 check("…once", ca.run(fs_get, fs_list, fs_patch, send, now=now), 0)
@@ -88,6 +88,32 @@ check("a blocked card says the shield is down",
       ("🛡️ Your shield blocked Zane's Kiss Cam",
        "Your shield is down now. Until it recharges, the next card played "
        "on you lands."))
+# Oct 14 2026's cards.
+check("a Flop tells the target it sold",
+      ca.play_push({"card": "Freeze", "fromName": "Zane",
+                    "outcome": "landed", "fake": True})[1],
+      "Your Flop sold it. They think it landed. Nothing happened.")
+check("a Trap tells who set it",
+      ca.play_push({"card": "Jinx", "fromName": "Zane",
+                    "outcome": "trapped"}),
+      ("🚩 Zane walked into your Trap",
+       "Their Jinx is gone and they can't bet for 2 hours."))
+check("a Pass tells the passer and the one it landed on",
+      (ca.play_push({"card": "Freeze", "fromName": "Zane",
+                     "outcome": "passed", "passedToName": "Eric"})[1],
+       ca.passed_push({"card": "Freeze", "fromName": "Zane",
+                       "toName": "Logan"})),
+      ("It landed on Eric instead.",
+       ("🏀 Zane's Weather Delay came your way",
+        "Logan had a Pass ready. You can't place a bet for an hour.")))
+check("a Steal names the card",
+      ca.play_push({"card": "Steal", "fromName": "Zane",
+                    "outcome": "landed", "detail": "Mirror"})[1],
+      "They took your Mirror.")
+check("a bandwagon is good news",
+      ca.play_push({"card": "Bandwagon", "fromName": "Zane",
+                    "outcome": "used"})[0],
+      "🚌 Zane jumped on your bandwagon")
 check("a curse says the bet goes in when you open Fumbling",
       ca.play_push({"card": "Curse", "fromName": "Eric Ward",
                     "outcome": "landed"})[1],

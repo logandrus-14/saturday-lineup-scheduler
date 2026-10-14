@@ -24,11 +24,11 @@ COMMISSIONER = "H97FRYb57EaOsvhyVXLu6bdKIv33"
 # Card names → their nicknames and what they do to you, as the app says it
 # (lib/features/fumbling/domain/chaos_deck.dart).
 CARDS = {
-    "Freeze": ("Rain Delay", "You can't place a bet for an hour."),
-    "Double Down": ("Going for It on 4th", "Your next slip's stake is doubled."),
-    "Jinx": ("Cover Curse", "If that slip loses, they take 10% of it."),
+    "Freeze": ("Weather Delay", "You can't place a bet for an hour."),
+    "Double Down": ("4th Down Conversion", "Your next slip's stake is doubled."),
+    "Jinx": ("Jinx", "If that slip loses, they take 10% of it."),
     "Jumbotron": ("Kiss Cam", "Your next slip is pinned for the whole crew."),
-    "Rabbit's Foot": ("Rally Cap", ""),
+    "Rabbit's Foot": ("Rabbit's Foot", ""),
     # Only your own phone can put it in your slips, so it goes in when you
     # next open Fumbling (Oct 13 2026: Eric cursed Zane and nothing showed).
     "Curse": ("Cursed Franchise", "A $100 bet on the day's biggest underdog "
@@ -36,16 +36,30 @@ CARDS = {
     "Handicap Hammer": ("Replacement Refs",
                         "Your payouts are 20% worse for three days."),
     "Lockdown": ("Shutout", ""),
-    "Bad Beat Insurance": ("Moral Victory", ""),
+    "Bad Beat Insurance": ("Bad Beat Insurance", ""),
     "Mulligan": ("Challenge Flag", ""),
     "Steal the Slip": ("Midnight Trade",
                        "One of your picks just got flipped."),
-    "Mirror": ("Own Goal", ""),
-    "Copycat": ("Stealing Signs", ""),
+    "Mirror": ("Mirror", ""),
+    "Copycat": ("Copycat", ""),
     "Heist": ("Half-Court Heave", ""),
     "Golden Ticket": ("Hole-in-One", ""),
-    "Stadium Blackout": ("Pulled the Plug", ""),
-    "Miracle Comeback": ("Down 28–3", ""),
+    "Stadium Blackout": ("Stadium Blackout", ""),
+    "Miracle Comeback": ("Miracle Comeback", ""),
+    # Oct 14 2026's eleven (lib/features/fumbling/domain/chaos_deck.dart).
+    "Hide": ("Hide", ""),
+    "Disguise": ("Pump Fake", ""),
+    "Flop": ("Flop", ""),
+    "Trap": ("Trap", ""),
+    "Clean Sheet": ("Clean Sheet", ""),
+    "Pass": ("Pass", ""),
+    "Steal": ("Steal", "They took a card from your hand."),
+    "Scout": ("Scouting Report",
+              "For 24 hours they can see your hand and any trick you've set."),
+    "Bench": ("Benched", "Your next slip can't be more than $25."),
+    "Hat Trick": ("Hat Trick",
+                  "Your next slip has to be a parlay of 3 or more legs."),
+    "Bandwagon": ("Bandwagon", ""),
 }
 
 
@@ -86,8 +100,28 @@ def play_push(p):
     nick, does = CARDS.get(p.get("card", ""), (p.get("card", "A card"), ""))
     who = p.get("fromName") or "Someone"
     outcome = p.get("outcome")
+    card = p.get("card")
+    # A Bandwagon Fan is a favour, not a hit.
+    if card == "Bandwagon":
+        return (f"🚌 {who} jumped on your bandwagon",
+                "If your slip hits, they get 10% of what it pays. You lose "
+                "nothing.")
+    # The Flop: they were told it landed. You know better.
+    if outcome == "landed" and p.get("fake"):
+        return (f"🤕 {who} played {nick} on you",
+                "Your Flop sold it. They think it landed. Nothing happened.")
+    if outcome == "landed" and card == "Steal" and p.get("detail"):
+        took = CARDS.get(p["detail"], (p["detail"], ""))[0]
+        return f"🃏 {who} played Steal on you", f"They took your {took}."
     if outcome == "landed":
         return f"🃏 {who} played {nick} on you", does or "It landed."
+    if outcome == "trapped":
+        return (f"🚩 {who} walked into your Trap",
+                f"Their {nick} is gone and they can't bet for 2 hours.")
+    if outcome == "passed":
+        return (f"🏀 Your Pass sent {who}'s {nick} on",
+                f"It landed on {p.get('passedToName') or 'someone else'} "
+                "instead.")
     # Logan, Oct 13 2026: "I don't think I got a notification when I lost my
     # shield I opened the app and was surprised" — the old "Your shield
     # stopped it" read as good news. Say it's gone.
@@ -96,10 +130,10 @@ def play_push(p):
                 "Your shield is down now. Until it recharges, the next card "
                 "played on you lands.")
     if outcome == "lockdown":
-        return f"🛡️ {who} tried {nick} on you", "Your Lockdown held."
+        return f"🛡️ {who} tried {nick} on you", "Your Shutout held."
     if outcome == "mirrored":
         return (f"🪞 {who} played {nick} on you",
-                "Your Own Goal sent it straight back.")
+                "Your Mirror sent it straight back.")
     if outcome == "heist-won":
         return (f"🏀 {who} pulled off a Half-Court Heave",
                 f"They cracked your vault and took "
@@ -108,6 +142,15 @@ def play_push(p):
         return (f"🏀 {who} tried a Half-Court Heave on you",
                 "They picked the wrong vault. Your money's safe.")
     return None
+
+
+def passed_push(p):
+    """(title, body) for whoever a Pass sent a card to."""
+    nick, does = CARDS.get(p.get("card", ""), (p.get("card", "A card"), ""))
+    who = p.get("fromName") or "Someone"
+    via = p.get("toName") or "Someone"
+    return (f"🏀 {who}'s {nick} came your way",
+            f"{via} had a Pass ready. " + (does or "It landed on you."))
 
 
 def duel_push(d, stage):
@@ -217,6 +260,10 @@ def run(fs_get, fs_list, fs_patch, send, now=None):
             all_plays.append(p)
             if p.get("to"):
                 tell(f"chaos__play__{pid}", p["to"], play_push(p))
+            # A No-Look Pass: whoever it landed on hears too.
+            if p.get("passedTo"):
+                tell(f"chaos__play__{pid}__passed", p["passedTo"],
+                     passed_push(p))
             elif p.get("card") == "Stadium Blackout":
                 for m in members:
                     if m != p.get("from"):
