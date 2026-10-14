@@ -29,8 +29,10 @@ CARDS = {
     "Jinx": ("Cover Curse", "If that slip loses, they take 10% of it."),
     "Jumbotron": ("Kiss Cam", "Your next slip is pinned for the whole crew."),
     "Rabbit's Foot": ("Rally Cap", ""),
+    # Only your own phone can put it in your slips, so it goes in when you
+    # next open Fumbling (Oct 13 2026: Eric cursed Zane and nothing showed).
     "Curse": ("Cursed Franchise", "A $100 bet on the day's biggest underdog "
-              "just went in your slips."),
+              "goes in your slips the next time you open Fumbling."),
     "Handicap Hammer": ("Replacement Refs",
                         "Your payouts are 20% worse for three days."),
     "Lockdown": ("Shutout", ""),
@@ -86,9 +88,13 @@ def play_push(p):
     outcome = p.get("outcome")
     if outcome == "landed":
         return f"🃏 {who} played {nick} on you", does or "It landed."
+    # Logan, Oct 13 2026: "I don't think I got a notification when I lost my
+    # shield I opened the app and was surprised" — the old "Your shield
+    # stopped it" read as good news. Say it's gone.
     if outcome == "blocked":
-        return (f"🛡️ {who} played {nick} on you",
-                "Your shield stopped it. It's recharging now.")
+        return (f"🛡️ Your shield blocked {who}'s {nick}",
+                "Your shield is down now. Until it recharges, the next card "
+                "played on you lands.")
     if outcome == "lockdown":
         return f"🛡️ {who} tried {nick} on you", "Your Lockdown held."
     if outcome == "mirrored":

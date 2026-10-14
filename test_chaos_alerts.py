@@ -80,6 +80,20 @@ check("…with the card's nickname", told[-1][1], "🃏 Zane played Rain Delay "
 check("…and what it does", told[-1][2], "You can't place a bet for an hour.")
 check("…once", ca.run(fs_get, fs_list, fs_patch, send, now=now), 0)
 
+# Oct 13 2026: a blocked card says the shield is gone, and a curse says when
+# its bet goes in — only the cursed player's own phone can put it there.
+check("a blocked card says the shield is down",
+      ca.play_push({"card": "Jumbotron", "fromName": "Zane",
+                    "outcome": "blocked"}),
+      ("🛡️ Your shield blocked Zane's Kiss Cam",
+       "Your shield is down now. Until it recharges, the next card played "
+       "on you lands."))
+check("a curse says the bet goes in when you open Fumbling",
+      ca.play_push({"card": "Curse", "fromName": "Eric Ward",
+                    "outcome": "landed"})[1],
+      "A $100 bet on the day's biggest underdog goes in your slips the next "
+      "time you open Fumbling.")
+
 lists["crews/c1/plays"].append(doc("crews/c1/plays/p3", {
     "from": s("a"), "fromName": s("Zane"), "to": s(""), "toName": s(""),
     "card": s("Stadium Blackout"), "outcome": s("used"),
