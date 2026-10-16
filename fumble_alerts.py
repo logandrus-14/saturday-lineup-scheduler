@@ -163,7 +163,25 @@ def roast(slip, game_of=None):
     return ROASTS[_stable(slip.get("id", "")) % len(ROASTS)]
 
 
-def alert_text(slip, status, payout, game_of=None):
+# Earning a card (lib/features/fumbling/domain/chaos.dart, earnedCardSlip):
+# a parlay of 3+ legs, $50 or more on it, placed on or after Oct 14 2026,
+# every leg hit — one a day. Logan, Oct 15 2026, picking "You earned a card!"
+# notifications for build 72.
+EARN_LEGS = 3
+EARN_STAKE = 50.0
+EARN_FROM = "2026-10-14"
+
+
+def earns_card(slip, earned_day, today):
+    """Whether this won slip earns a card, given the day the player last
+    earned one and today's date (both 'YYYY-MM-DD')."""
+    return (len(slip["legs"]) >= EARN_LEGS
+            and slip["stake"] >= EARN_STAKE
+            and (slip.get("createdAt") or "")[:10] >= EARN_FROM
+            and earned_day != today)
+
+
+def alert_text(slip, status, payout, game_of=None, earned=False):
     """(title, body) for a slip that hit or missed."""
     legs = slip["legs"]
     what = (" + ".join(leg_label(l) for l in legs) if len(legs) <= 3
@@ -173,7 +191,9 @@ def alert_text(slip, status, payout, game_of=None):
     if status == "won":
         return ("Fumbled 💸",
                 f"{what} hit. +{money(payout - slip['stake'])} — would have "
-                f"been real money.")
+                f"been real money."
+                + (" You earned a card too: open Chaos to pick it."
+                   if earned else ""))
     return ("Bullet dodged 😮‍💨",
             f"{what} missed. {roast(slip, game_of)} That would have cost you "
             f"{money(slip['stake'])}.")
@@ -221,7 +241,8 @@ def parse_slip(doc):
             "stake": float(f.get("stake", 0)),
             "cashOut": f.get("cashOut"),
             "payoutMul": f.get("payoutMul"),
-            "miracle": bool(f.get("miracle"))}
+            "miracle": bool(f.get("miracle")),
+            "createdAt": f.get("createdAt") or ""}
 
 
 def cache_doc_for(leg):
@@ -266,6 +287,16 @@ def future_game(leg, results):
         return None
     won = str(winner) == option
     return {"final": True, "home": 1 if won else 0, "away": 0 if won else 1}
+
+
+def _today():
+    """Today's date where the players are — the app's days are the phone's."""
+    now = dt.datetime.now(dt.timezone.utc)
+    try:
+        from zoneinfo import ZoneInfo
+        return now.astimezone(ZoneInfo("America/Denver")).date().isoformat()
+    except Exception:  # no time-zone data on the server: Mountain, roughly
+        return (now - dt.timedelta(hours=6)).date().isoformat()
 
 
 def _now():
@@ -315,8 +346,17 @@ def run(fs_get, fs_list, fs_patch, send):
             if notify.already_sent(fs_get, key):
                 continue
             if launched:
+                earned = False
+                if status == "won":
+                    chaos = (fs_get(f"chaos/{uid}") or {}).get("fields", {})
+                    earned = earns_card(
+                        slip,
+                        _value(chaos["earnedDay"]) if "earnedDay" in chaos
+                        else None,
+                        _today())
                 title, body = alert_text(
-                    slip, status, payout, lambda gid: game_of(by_id[gid]))
+                    slip, status, payout, lambda gid: game_of(by_id[gid]),
+                    earned=earned)
                 send(uid, title, body)
                 sent += 1
             notify.record_sent(fs_patch, key, "fumble", uid)

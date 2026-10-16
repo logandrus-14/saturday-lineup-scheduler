@@ -207,5 +207,22 @@ check("…as fumbled (a win)", told[-1][1], "Fumbled 💸")
 sent = fa.run(fs_get, fs_list, fs_patch, lambda u, t, b: told.append((u, t, b)))
 check("…and never again", sent, 0)
 
+# Build 72: a 3+ leg, $50+ parlay that hits earns a card — once a day.
+big = {"legs": [{}, {}, {}], "stake": 50.0, "createdAt": "2026-10-16T12:00Z"}
+check("a big parlay earns a card", fa.earns_card(big, None, "2026-10-16"),
+      True)
+check("…not if one was earned today",
+      fa.earns_card(big, "2026-10-16", "2026-10-16"), False)
+check("…not two legs",
+      fa.earns_card({**big, "legs": [{}, {}]}, None, "2026-10-16"), False)
+check("…not \$49", fa.earns_card({**big, "stake": 49.0}, None, "2026-10-16"),
+      False)
+check("…and the push says so",
+      fa.alert_text({"legs": [{"market": "moneyline", "home": True,
+                               "homeTeam": "BYU", "awayTeam": "Utah",
+                               "line": 0, "price": -110}] * 4,
+                     "stake": 50.0}, "won", 120.0, earned=True)[1]
+      .endswith("You earned a card too: open Chaos to pick it."), True)
+
 print(f"{checks - failures}/{checks} fumble alert checks pass")
 sys.exit(1 if failures else 0)

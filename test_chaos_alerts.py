@@ -168,5 +168,33 @@ ca.run(fs_get, fs_list, fs_patch, send, now=monday)
 check("Monday: the report goes to the Commissioner only",
       [t[0] for t in told[before:]], [ca.COMMISSIONER])
 
+# Build 72 (Oct 15 2026): "Your shield is back up", and the morning nudge
+# for the free card — 10am in Denver here.
+ten_am = dt.datetime(2026, 10, 20, 16, tzinfo=dt.timezone.utc)
+lists["chaos"] = [
+    doc("chaos/a", {"remindCards": {"booleanValue": False},
+                    "pickDay": s("2026-10-19")}),
+    doc("chaos/b", {"shieldReadyAt": s("2026-10-20T15:00:00Z"),
+                    "pickDay": s("2026-10-20")}),
+    doc("chaos/c", {"pickDay": s("2026-10-19")}),
+    doc("chaos/z", {"pickDay": s("2026-10-19")}),  # not in a chaos crew
+]
+before = len(told)
+ca.run(fs_get, fs_list, fs_patch, send, now=ten_am)
+new = told[before:]
+check("a shield back up tells its owner",
+      [(u, t) for u, t, _ in new if "shield" in t],
+      [("b", "🛡️ Your shield is back up")])
+check("the free-card nudge: not picked, not switched off, in a chaos crew",
+      sorted(u for u, t, _ in new if "free card" in t), ["c"])
+before = len(told)
+ca.run(fs_get, fs_list, fs_patch, send, now=ten_am)
+check("…each once", len(told) - before, 0)
+afternoon = dt.datetime(2026, 10, 21, 21, tzinfo=dt.timezone.utc)  # 3pm
+before = len(told)
+ca.run(fs_get, fs_list, fs_patch, send, now=afternoon)
+check("no nudge outside the morning", [t for _, t, _ in told[before:]
+                                        if "free card" in t], [])
+
 print(f"{checks - failures}/{checks} chaos alert checks pass")
 sys.exit(1 if failures else 0)

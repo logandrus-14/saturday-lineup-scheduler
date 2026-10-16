@@ -15,8 +15,35 @@ two — counted as lib/features/fumbling/domain/chaos_balance.dart counts it
 (test_chaos_alerts.py holds the two together).
 """
 import datetime as dt
-
 import notify
+
+# A recharged shield is news for a few hours, not days — so a shield that
+# came back while pushes were off isn't announced late.
+SHIELD_FRESH = dt.timedelta(hours=6)
+
+# The morning nudge for the free card, in the players' time.
+REMIND_FROM, REMIND_UNTIL = 9, 12
+
+
+def _players_time(now):
+    """[now] in the players' time (Mountain). If the server has no time-zone
+    data, a fixed UTC−6 — off by an hour in winter, never broken."""
+    try:
+        from zoneinfo import ZoneInfo
+        return now.astimezone(ZoneInfo("America/Denver"))
+    except Exception:
+        return now.astimezone(dt.timezone(dt.timedelta(hours=-6)))
+
+
+def _when(v):
+    """An ISO time (or Firestore timestamp string) → aware datetime."""
+    if not v:
+        return None
+    try:
+        t = dt.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)
 
 LAUNCH_KEY = "chaos__launch"
 COMMISSIONER = "H97FRYb57EaOsvhyVXLu6bdKIv33"
@@ -271,6 +298,30 @@ def run(fs_get, fs_list, fs_patch, send, now=None):
                              (f"🔌 {p.get('fromName')} pulled the plug",
                               "Stadium Blackout: no bets for anyone in "
                               f"{crew.get('name', 'the crew')} for an hour."))
+
+    # Logan, Oct 15 2026, for build 72: "Your shield is back up" and a
+    # morning nudge for the free card (which he can switch off: the chaos
+    # doc's remindCards). Only for people in a crew with Chaos Mode on.
+    in_chaos = {m for _, crew in crews if crew.get("chaos")
+                for m in (crew.get("members") or [])}
+    local = _players_time(now)
+    today = local.date().isoformat()
+    for d in fs_list("chaos"):
+        uid, st = _id(d), _doc(d)
+        if uid not in in_chaos:
+            continue
+        ready = _when(st.get("shieldReadyAt"))
+        if ready and ready <= now and now - ready < SHIELD_FRESH:
+            tell(f"chaos__shield__{uid}__{ready.isoformat()}", uid,
+                 ("🛡️ Your shield is back up",
+                  "The next card played on you gets blocked."))
+        if (REMIND_FROM <= local.hour < REMIND_UNTIL
+                and st.get("pickDay") != today
+                and st.get("remindCards") is not False):
+            tell(f"chaos__daily__{uid}__{today}", uid,
+                 ("🃏 Your free card is ready",
+                  "Pick one of four face down in Fumbling. Turn this off in "
+                  "the Chaos hub."))
 
     for d in fs_list("duels"):
         duel, did = _doc(d), _id(d)
