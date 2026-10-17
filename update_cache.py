@@ -2633,7 +2633,9 @@ def notify_fumble_slips(token):
     import notify
 
     def send(uid, title, body):
-        for dev, _ in notify.devices_for(lambda p: fs_list(token, p), uid):
+        # The Fumbling app when they have it, else Saturday Lineup's tab.
+        for dev, _ in notify.fumbling_devices_for(
+                lambda p: fs_list(token, p), uid):
             notify.send_to_token(token, PROJECT, dev, title, body,
                                  route="/fumbling")
 

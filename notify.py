@@ -89,14 +89,35 @@ def send_to_token(token, project, device_token, title, body, route=None):
         return True  # not the device's fault; keep the token
 
 
-def devices_for(fs_list, uid):
-    """Every device token registered to one person."""
-    out = []
+def _devices_by_app(fs_list, uid):
+    """{app: [(token, doc name)]} for one person. A device saved before the
+    Fumbling app existed (Oct 17 2026) has no `app` and is Saturday
+    Lineup's -- lib/features/notifications/data/device_token_repository.dart
+    writes it now."""
+    out = {}
     for doc in fs_list(f"users/{uid}/devices"):
-        tok = doc.get("fields", {}).get("token", {}).get("stringValue")
+        fields = doc.get("fields", {})
+        tok = fields.get("token", {}).get("stringValue")
+        app = fields.get("app", {}).get("stringValue") or "lineup"
         if tok:
-            out.append((tok, doc["name"]))
+            out.setdefault(app, []).append((tok, doc["name"]))
     return out
+
+
+def devices_for(fs_list, uid):
+    """Every SATURDAY LINEUP device token registered to one person.
+
+    The standalone Fumbling app shares users/{uid}/devices; its tokens are
+    left out here, so a lineup reminder never lands in Fumbling."""
+    return _devices_by_app(fs_list, uid).get("lineup", [])
+
+
+def fumbling_devices_for(fs_list, uid):
+    """Where a Fumbling push goes: the Fumbling app if this person has it,
+    otherwise Saturday Lineup (its Fumbling tab) -- never both, so nobody
+    with both apps hears every slip twice."""
+    by_app = _devices_by_app(fs_list, uid)
+    return by_app.get("fumbling") or by_app.get("lineup", [])
 
 
 def already_sent(fs_get, key):
