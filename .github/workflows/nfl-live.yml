@@ -11,7 +11,8 @@
 name: NFL live refresh
 
 # The NBA rides along (Oct 5 2026) — see nfl_live.py. Its nightly starts are
-# the last two crons.
+# the evening crons. So do the NHL, college basketball, soccer and MLB
+# (Oct 18 2026, daily.py); the last cron is soccer's daytime restart.
 
 on:
   schedule:
@@ -33,6 +34,10 @@ on:
     # once if there is nothing left to watch.
     - cron: '17,47 22,23 * * *'
     - cron: '17,47 0,1,2,3,4 * * *'
+    # Soccer's mornings and afternoons (Oct 18 2026, daily.py): Europe's
+    # weekend games from 11:30Z, the Champions League's 16:45Z and 19:00Z
+    # midweek — only to restart the chain if it has broken.
+    - cron: '17 11,13,16,18 * * *'
   workflow_dispatch: {}
 
 concurrency:

@@ -2625,6 +2625,92 @@ def write_nba_cache(token, live=False):
         return None
 
 
+# What this process last wrote for each league's day, (key, day) -> games,
+# so the every-minute shift needn't read its own writes back (and can skip
+# a day with nothing on — see daily.needs_refresh).
+_daily_last = {}
+
+
+def write_daily_cache(token, live=False):
+    """The NHL, college basketball, soccer and MLB for Fumbling — see
+    daily.py. Never raises; each league is its own failure.
+
+    The same docs as the NBA's — cache/<key>_<YYYYMMDD> for yesterday
+    through six days on, cache/<key>_current naming the season and days.
+    [live] refreshes only yesterday and today, and only a day with a game
+    on or within the hour (once it has been read this shift).
+
+    Returns the games of the days it looked at, or None when every league
+    failed.
+    """
+    import daily
+    import nba
+
+    now_utc = dt.datetime.now(dt.timezone.utc)
+    stamp = now_utc.isoformat().replace("+00:00", "Z")
+    out, any_ok = [], False
+    for key in daily.LEAGUES:
+        try:
+            days = nba.window(now_utc)
+            if live:
+                days = days[:2]
+            season = None
+            written = 0
+            for day in days:
+                last = _daily_last.get((key, day))
+                if live and last is not None and \
+                        not daily.needs_refresh(last, now_utc):
+                    out.extend(last)
+                    continue
+                try:
+                    boards = daily.fetch_day(key, day)
+                except Exception as e:
+                    print(f"{key.upper()} {day} skipped: {e}")
+                    continue
+                season = season or daily.season_of(boards, day)
+                if last is None:
+                    prior_doc = fs_get(token, f"cache/{key}_{day}") or {}
+                    prior_raw = prior_doc.get("fields", {}).get(
+                        "gamesJson", {}).get("stringValue")
+                    last = json.loads(prior_raw) if prior_raw else None
+                games = daily.parse(key, boards, last)
+                if not games and not last:
+                    _daily_last[(key, day)] = []
+                    continue  # an empty day: nothing to write
+                req = urllib.request.Request(
+                    f"{FS}/{PARENT}/cache/{key}_{day}",
+                    data=json.dumps({"fields": {
+                        "gamesJson": {"stringValue": json.dumps(games)},
+                        "season": {"integerValue": str(season or 0)},
+                        "updatedAt": {"timestampValue": stamp},
+                    }}).encode(), method="PATCH",
+                    headers={"Authorization": f"Bearer {token}",
+                             "Content-Type": "application/json"})
+                _send_write(req)
+                _daily_last[(key, day)] = games
+                written += len(games)
+                out.extend(games)
+            if not live and season:
+                req = urllib.request.Request(
+                    f"{FS}/{PARENT}/cache/{key}_current",
+                    data=json.dumps({"fields": {
+                        "season": {"integerValue": str(season)},
+                        "days": {"arrayValue": {"values": [
+                            {"stringValue": d} for d in days]}},
+                        "updatedAt": {"timestampValue": stamp},
+                    }}).encode(), method="PATCH",
+                    headers={"Authorization": f"Bearer {token}",
+                             "Content-Type": "application/json"})
+                _send_write(req)
+            if not live:
+                print(f"cached {key.upper()} {days[0]}–{days[-1]}: "
+                      f"{written} games")
+            any_ok = True
+        except Exception as e:
+            print(f"{key.upper()} cache skipped: {e}")
+    return out if any_ok else None
+
+
 def notify_fumble_slips(token):
     """A push for every Fumbling slip that has cashed or fumbled since last
     time — see fumble_alerts.py — and the friend games' pushes
@@ -2729,6 +2815,7 @@ def main():
 
     write_nfl_cache(token, include_next=True)
     write_nba_cache(token)
+    write_daily_cache(token)  # NHL, college hoops, soccer, MLB
     notify_fumble_slips(token)
     write_futures_cache(token, futures_season(dt.datetime.now(dt.timezone.utc)))
 

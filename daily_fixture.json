@@ -1,0 +1,1186 @@
+{
+ "nhl_20261019": {
+  "leagues": [
+   {
+    "id": "90",
+    "name": "National Hockey League",
+    "abbreviation": "NHL",
+    "slug": "nhl",
+    "season": {
+     "year": 2027,
+     "startDate": "2026-09-15T07:00Z",
+     "endDate": "2027-07-01T06:59Z",
+     "displayName": "2026-27",
+     "type": {
+      "id": "2",
+      "type": 2,
+      "name": "Regular Season",
+      "abbreviation": "reg"
+     }
+    },
+    "calendarType": "day",
+    "calendarIsWhitelist": true,
+    "calendarStartDate": "2026-09-15T07:00Z",
+    "calendarEndDate": "2027-07-01T06:59Z"
+   }
+  ],
+  "events": [
+   {
+    "id": "401892535",
+    "date": "2026-10-19T23:00Z",
+    "name": "Anaheim Ducks at New York Rangers",
+    "shortName": "ANA @ NYR",
+    "season": {
+     "year": 2027,
+     "type": 2,
+     "slug": "regular-season"
+    },
+    "competitions": [
+     {
+      "id": "401892535",
+      "date": "2026-10-19T23:00Z",
+      "attendance": 0,
+      "type": {
+       "id": "1",
+       "abbreviation": "STD"
+      },
+      "timeValid": true,
+      "neutralSite": false,
+      "playByPlayAvailable": false,
+      "recent": false,
+      "competitors": [
+       {
+        "id": "13",
+        "type": "team",
+        "order": 0,
+        "homeAway": "home",
+        "team": {
+         "id": "13",
+         "location": "New York",
+         "name": "Rangers",
+         "abbreviation": "NYR",
+         "displayName": "New York Rangers",
+         "shortDisplayName": "Rangers",
+         "color": "0056ae",
+         "alternateColor": "e51937",
+         "isActive": true,
+         "logoDark": "https://a.espncdn.com/i/teamlogos/nhl/500-dark/scoreboard/nyr.png"
+        },
+        "score": "0",
+        "curatedRank": {
+         "current": 99
+        }
+       },
+       {
+        "id": "25",
+        "type": "team",
+        "order": 1,
+        "homeAway": "away",
+        "team": {
+         "id": "25",
+         "location": "Anaheim",
+         "name": "Ducks",
+         "abbreviation": "ANA",
+         "displayName": "Anaheim Ducks",
+         "shortDisplayName": "Ducks",
+         "color": "fc4c02",
+         "alternateColor": "000000",
+         "isActive": true,
+         "logoDark": "https://a.espncdn.com/i/teamlogos/nhl/500-dark/scoreboard/ana.png"
+        },
+        "score": "0",
+        "curatedRank": {
+         "current": 99
+        }
+       }
+      ],
+      "status": {
+       "clock": 0.0,
+       "displayClock": "0:00",
+       "period": 0,
+       "type": {
+        "id": "1",
+        "name": "STATUS_SCHEDULED",
+        "state": "pre",
+        "completed": false,
+        "description": "Scheduled",
+        "detail": "Mon, October 19th at 7:00 PM EDT",
+        "shortDetail": "10/19 - 7:00 PM EDT"
+       }
+      },
+      "startDate": "2026-10-19T23:00Z",
+      "broadcast": "ESPN+",
+      "odds": [
+       {
+        "provider": {
+         "id": "100",
+         "name": "Draft Kings",
+         "priority": 1,
+         "displayName": "Draft Kings"
+        },
+        "overUnder": 6.5,
+        "spread": -1.5,
+        "awayTeamOdds": {
+         "favorite": false,
+         "underdog": true,
+         "team": {
+          "id": "25",
+          "abbreviation": "ANA",
+          "name": "Ducks",
+          "displayName": "Anaheim Ducks"
+         },
+         "favoriteAtOpen": false
+        },
+        "homeTeamOdds": {
+         "favorite": true,
+         "underdog": false,
+         "team": {
+          "id": "13",
+          "abbreviation": "NYR",
+          "name": "Rangers",
+          "displayName": "New York Rangers"
+         },
+         "favoriteAtOpen": true
+        },
+        "moneyline": {
+         "displayName": "Moneyline",
+         "shortDisplayName": "ML",
+         "home": {
+          "close": {
+           "odds": "-135"
+          },
+          "open": {
+           "odds": "-135"
+          }
+         },
+         "away": {
+          "close": {
+           "odds": "+114"
+          },
+          "open": {
+           "odds": "+114"
+          }
+         }
+        },
+        "pointSpread": {
+         "displayName": "Spread",
+         "shortDisplayName": "Spread",
+         "home": {
+          "close": {
+           "line": "-1.5",
+           "odds": "+180"
+          },
+          "open": {
+           "line": "-1.5",
+           "odds": "+180"
+          }
+         },
+         "away": {
+          "close": {
+           "line": "+1.5",
+           "odds": "-218"
+          },
+          "open": {
+           "line": "+1.5",
+           "odds": "-218"
+          }
+         }
+        },
+        "total": {
+         "displayName": "Total",
+         "shortDisplayName": "Total",
+         "over": {
+          "close": {
+           "line": "o6.5",
+           "odds": "+105"
+          },
+          "open": {
+           "line": "o5.5",
+           "odds": "-135"
+          }
+         },
+         "under": {
+          "close": {
+           "line": "u6.5",
+           "odds": "-125"
+          },
+          "open": {
+           "line": "u5.5",
+           "odds": "+114"
+          }
+         }
+        }
+       }
+      ],
+      "highlights": []
+     }
+    ],
+    "status": {
+     "clock": 0.0,
+     "displayClock": "0:00",
+     "period": 0,
+     "type": {
+      "id": "1",
+      "name": "STATUS_SCHEDULED",
+      "state": "pre",
+      "completed": false,
+      "description": "Scheduled",
+      "detail": "Mon, October 19th at 7:00 PM EDT",
+      "shortDetail": "10/19 - 7:00 PM EDT"
+     }
+    }
+   },
+   {
+    "id": "401892536",
+    "date": "2026-10-19T23:00Z",
+    "name": "Colorado Avalanche at Philadelphia Flyers",
+    "shortName": "COL @ PHI",
+    "season": {
+     "year": 2027,
+     "type": 2,
+     "slug": "regular-season"
+    },
+    "competitions": [
+     {
+      "id": "401892536",
+      "date": "2026-10-19T23:00Z",
+      "attendance": 0,
+      "type": {
+       "id": "1",
+       "abbreviation": "STD"
+      },
+      "timeValid": true,
+      "neutralSite": false,
+      "playByPlayAvailable": false,
+      "recent": false,
+      "competitors": [
+       {
+        "id": "15",
+        "type": "team",
+        "order": 0,
+        "homeAway": "home",
+        "team": {
+         "id": "15",
+         "location": "Philadelphia",
+         "name": "Flyers",
+         "abbreviation": "PHI",
+         "displayName": "Philadelphia Flyers",
+         "shortDisplayName": "Flyers",
+         "color": "fe5823",
+         "alternateColor": "000000",
+         "isActive": true,
+         "logoDark": "https://a.espncdn.com/i/teamlogos/nhl/500-dark/scoreboard/phi.png"
+        },
+        "score": "0",
+        "curatedRank": {
+         "current": 99
+        }
+       },
+       {
+        "id": "17",
+        "type": "team",
+        "order": 1,
+        "homeAway": "away",
+        "team": {
+         "id": "17",
+         "location": "Colorado",
+         "name": "Avalanche",
+         "abbreviation": "COL",
+         "displayName": "Colorado Avalanche",
+         "shortDisplayName": "Avalanche",
+         "color": "860038",
+         "alternateColor": "005ea3",
+         "isActive": true,
+         "logoDark": "https://a.espncdn.com/i/teamlogos/nhl/500-dark/scoreboard/col.png"
+        },
+        "score": "0",
+        "curatedRank": {
+         "current": 99
+        }
+       }
+      ],
+      "status": {
+       "clock": 0.0,
+       "displayClock": "0:00",
+       "period": 0,
+       "type": {
+        "id": "1",
+        "name": "STATUS_SCHEDULED",
+        "state": "pre",
+        "completed": false,
+        "description": "Scheduled",
+        "detail": "Mon, October 19th at 7:00 PM EDT",
+        "shortDetail": "10/19 - 7:00 PM EDT"
+       }
+      },
+      "startDate": "2026-10-19T23:00Z",
+      "broadcast": "ESPN+",
+      "odds": [
+       {
+        "provider": {
+         "id": "100",
+         "name": "Draft Kings",
+         "priority": 1
+        },
+        "overUnder": 6.5,
+        "spread": 1.5,
+        "awayTeamOdds": {
+         "favorite": true,
+         "underdog": false,
+         "team": {
+          "id": "17",
+          "abbreviation": "COL",
+          "name": "Avalanche",
+          "displayName": "Colorado Avalanche"
+         },
+         "favoriteAtOpen": true
+        },
+        "homeTeamOdds": {
+         "favorite": false,
+         "underdog": true,
+         "team": {
+          "id": "15",
+          "abbreviation": "PHI",
+          "name": "Flyers",
+          "displayName": "Philadelphia Flyers"
+         },
+         "favoriteAtOpen": false
+        },
+        "moneyline": {
+         "displayName": "Moneyline",
+         "shortDisplayName": "ML",
+         "home": {
+          "close": {
+           "odds": "+180"
+          },
+          "open": {
+           "odds": "+170"
+          }
+         },
+         "away": {
+          "close": {
+           "odds": "-218"
+          },
+          "open": {
+           "odds": "-205"
+          }
+         }
+        },
+        "pointSpread": {
+         "displayName": "Spread",
+         "shortDisplayName": "Spread",
+         "home": {
+          "close": {
+           "line": "+1.5",
+           "odds": "-148"
+          },
+          "open": {
+           "line": "+1.5",
+           "odds": "-142"
+          }
+         },
+         "away": {
+          "close": {
+           "line": "-1.5",
+           "odds": "+124"
+          },
+          "open": {
+           "line": "-1.5",
+           "odds": "+120"
+          }
+         }
+        },
+        "total": {
+         "displayName": "Total",
+         "shortDisplayName": "Total",
+         "over": {
+          "close": {
+           "line": "o6.5",
+           "odds": "+110"
+          },
+          "open": {
+           "line": "o5.5",
+           "odds": "-130"
+          }
+         },
+         "under": {
+          "close": {
+           "line": "u6.5",
+           "odds": "-130"
+          },
+          "open": {
+           "line": "u5.5",
+           "odds": "+110"
+          }
+         }
+        }
+       }
+      ],
+      "highlights": []
+     }
+    ],
+    "status": {
+     "clock": 0.0,
+     "displayClock": "0:00",
+     "period": 0,
+     "type": {
+      "id": "1",
+      "name": "STATUS_SCHEDULED",
+      "state": "pre",
+      "completed": false,
+      "description": "Scheduled",
+      "detail": "Mon, October 19th at 7:00 PM EDT",
+      "shortDetail": "10/19 - 7:00 PM EDT"
+     }
+    }
+   }
+  ]
+ },
+ "mlb_20261019": {
+  "leagues": [
+   {
+    "id": "10",
+    "name": "Major League Baseball",
+    "abbreviation": "MLB",
+    "midsizeName": "MLB",
+    "slug": "mlb",
+    "season": {
+     "year": 2026,
+     "startDate": "2026-02-19T08:00Z",
+     "endDate": "2026-11-12T07:59Z",
+     "displayName": "2026",
+     "type": {
+      "id": "3",
+      "type": 3,
+      "name": "Postseason",
+      "abbreviation": "post"
+     }
+    },
+    "calendarType": "day",
+    "calendarIsWhitelist": false,
+    "calendarStartDate": "2026-02-19T08:00Z",
+    "calendarEndDate": "2026-11-12T07:59Z"
+   }
+  ],
+  "events": [
+   {
+    "id": "401908028",
+    "date": "2026-10-20T00:00Z",
+    "name": "Cleveland Guardians at Tampa Bay Rays",
+    "shortName": "CLE @ TB",
+    "season": {
+     "year": 2026,
+     "type": 3,
+     "slug": "post-season"
+    },
+    "competitions": [
+     {
+      "id": "401908028",
+      "date": "2026-10-20T00:00Z",
+      "attendance": 0,
+      "type": {
+       "id": "16",
+       "abbreviation": "SEMI"
+      },
+      "timeValid": true,
+      "neutralSite": false,
+      "conferenceCompetition": true,
+      "playByPlayAvailable": false,
+      "recent": false,
+      "wasSuspended": false,
+      "competitors": [
+       {
+        "id": "30",
+        "type": "team",
+        "order": 0,
+        "homeAway": "home",
+        "team": {
+         "id": "30",
+         "location": "Tampa Bay",
+         "name": "Rays",
+         "abbreviation": "TB",
+         "displayName": "Tampa Bay Rays",
+         "shortDisplayName": "Rays",
+         "color": "092c5c",
+         "alternateColor": "8fbce6",
+         "isActive": true,
+         "logoDark": "https://a.espncdn.com/i/teamlogos/mlb/500-dark/scoreboard/tb.png"
+        },
+        "score": "0",
+        "hits": 0,
+        "errors": 0,
+        "record": "3-2"
+       },
+       {
+        "id": "5",
+        "type": "team",
+        "order": 1,
+        "homeAway": "away",
+        "team": {
+         "id": "5",
+         "location": "Cleveland",
+         "name": "Guardians",
+         "abbreviation": "CLE",
+         "displayName": "Cleveland Guardians",
+         "shortDisplayName": "Guardians",
+         "color": "002b5c",
+         "alternateColor": "e31937",
+         "isActive": true,
+         "logoDark": "https://a.espncdn.com/i/teamlogos/mlb/500-dark/scoreboard/cle.png"
+        },
+        "score": "0",
+        "hits": 0,
+        "errors": 0,
+        "record": "2-3"
+       }
+      ],
+      "status": {
+       "clock": 0.0,
+       "displayClock": "0:00",
+       "period": 1,
+       "type": {
+        "id": "1",
+        "name": "STATUS_SCHEDULED",
+        "state": "pre",
+        "completed": false,
+        "description": "Scheduled",
+        "detail": "Scheduled",
+        "shortDetail": "10/19 - 8:00 PM EDT"
+       }
+      },
+      "startDate": "2026-10-20T00:00Z",
+      "broadcast": "TBS/truTV",
+      "odds": [
+       {
+        "provider": {
+         "id": "100",
+         "name": "DraftKings",
+         "priority": 1,
+         "displayName": "DraftKings"
+        },
+        "overUnder": 6.5,
+        "spread": -1.5,
+        "awayTeamOdds": {
+         "favorite": false,
+         "underdog": true,
+         "team": {
+          "id": "5",
+          "abbreviation": "CLE",
+          "name": "Guardians",
+          "displayName": "Cleveland Guardians"
+         },
+         "favoriteAtOpen": false
+        },
+        "homeTeamOdds": {
+         "favorite": true,
+         "underdog": false,
+         "team": {
+          "id": "30",
+          "abbreviation": "TB",
+          "name": "Rays",
+          "displayName": "Tampa Bay Rays"
+         },
+         "favoriteAtOpen": true
+        },
+        "moneyline": {
+         "displayName": "Moneyline",
+         "shortDisplayName": "ML",
+         "home": {
+          "close": {
+           "odds": "-140"
+          },
+          "open": {
+           "odds": "-130"
+          }
+         },
+         "away": {
+          "close": {
+           "odds": "+116"
+          },
+          "open": {
+           "odds": "+108"
+          }
+         }
+        },
+        "pointSpread": {
+         "displayName": "Runline",
+         "shortDisplayName": "RL",
+         "home": {
+          "close": {
+           "line": "-1.5",
+           "odds": "+171"
+          },
+          "open": {
+           "line": "-1.5",
+           "odds": "+178"
+          }
+         },
+         "away": {
+          "close": {
+           "line": "+1.5",
+           "odds": "-209"
+          },
+          "open": {
+           "line": "+1.5",
+           "odds": "-218"
+          }
+         }
+        },
+        "total": {
+         "displayName": "Total Runs",
+         "shortDisplayName": "Total",
+         "over": {
+          "close": {
+           "line": "o6.5",
+           "odds": "-114"
+          },
+          "open": {
+           "line": "o6.5",
+           "odds": "-114"
+          }
+         },
+         "under": {
+          "close": {
+           "line": "u6.5",
+           "odds": "-105"
+          },
+          "open": {
+           "line": "u6.5",
+           "odds": "-106"
+          }
+         }
+        }
+       }
+      ],
+      "highlights": []
+     }
+    ],
+    "weather": {
+     "displayValue": "Clear",
+     "temperature": 76,
+     "highTemperature": 76,
+     "conditionId": "33"
+    },
+    "status": {
+     "clock": 0.0,
+     "displayClock": "0:00",
+     "period": 1,
+     "type": {
+      "id": "1",
+      "name": "STATUS_SCHEDULED",
+      "state": "pre",
+      "completed": false,
+      "description": "Scheduled",
+      "detail": "Scheduled",
+      "shortDetail": "10/19 - 8:00 PM EDT"
+     }
+    }
+   }
+  ]
+ },
+ "soc_eng.1_20261025": {
+  "leagues": [
+   {
+    "id": "700",
+    "name": "English Premier League",
+    "abbreviation": "Premier League",
+    "midsizeName": "ENG.1",
+    "slug": "eng.1",
+    "season": {
+     "year": 2026,
+     "startDate": "2026-06-01T04:00Z",
+     "endDate": "2027-06-01T03:59Z",
+     "displayName": "2026-27 English Premier League",
+     "type": {
+      "id": "1",
+      "type": 14308,
+      "name": "2026-27 English Premier League",
+      "abbreviation": "2026-27 English Premier League"
+     }
+    },
+    "calendarType": "day",
+    "calendarIsWhitelist": true,
+    "calendarStartDate": "2026-06-01T04:00Z",
+    "calendarEndDate": "2027-06-01T03:59Z"
+   }
+  ],
+  "events": [
+   {
+    "id": "401879254",
+    "date": "2026-10-25T14:00Z",
+    "name": "Newcastle United at Crystal Palace",
+    "shortName": "NEW @ CRY",
+    "season": {
+     "year": 2026,
+     "type": 14308,
+     "slug": "2026-27-english-premier-league"
+    },
+    "competitions": [
+     {
+      "id": "401879254",
+      "date": "2026-10-25T14:00Z",
+      "startDate": "2026-10-25T14:00Z",
+      "attendance": 0,
+      "timeValid": true,
+      "recent": false,
+      "status": {
+       "clock": 0.0,
+       "displayClock": "0'",
+       "type": {
+        "id": "1",
+        "name": "STATUS_SCHEDULED",
+        "state": "pre",
+        "completed": false,
+        "description": "Scheduled",
+        "detail": "Sun, October 25th at 10:00 AM EDT",
+        "shortDetail": "Scheduled"
+       }
+      },
+      "altGameNote": "English Premier League",
+      "broadcast": "",
+      "competitors": [
+       {
+        "id": "384",
+        "type": "team",
+        "order": 0,
+        "homeAway": "home",
+        "winner": false,
+        "form": "DLWDW",
+        "score": "0",
+        "team": {
+         "id": "384",
+         "abbreviation": "CRY",
+         "displayName": "Crystal Palace",
+         "shortDisplayName": "C Palace",
+         "name": "Crystal Palace",
+         "location": "Crystal Palace",
+         "color": "0202fb",
+         "alternateColor": "000000",
+         "isActive": true
+        }
+       },
+       {
+        "id": "361",
+        "type": "team",
+        "order": 1,
+        "homeAway": "away",
+        "winner": false,
+        "form": "DLWLW",
+        "score": "0",
+        "team": {
+         "id": "361",
+         "abbreviation": "NEW",
+         "displayName": "Newcastle United",
+         "shortDisplayName": "Newcastle",
+         "name": "Newcastle United",
+         "location": "Newcastle United",
+         "color": "000000",
+         "alternateColor": "0B1B3D",
+         "isActive": true
+        }
+       }
+      ],
+      "odds": [
+       {
+        "provider": {
+         "id": "2000",
+         "name": "Bet 365",
+         "priority": 0,
+         "displayName": "Bet 365"
+        },
+        "awayTeamOdds": {
+         "summary": "7/5",
+         "value": 2.4,
+         "handicap": 0.0,
+         "team": {
+          "id": "361",
+          "abbreviation": "NEW",
+          "displayName": "Newcastle United"
+         }
+        },
+        "homeTeamOdds": {
+         "summary": "17/10",
+         "value": 2.7,
+         "handicap": 0.0,
+         "team": {
+          "id": "384",
+          "abbreviation": "CRY",
+          "displayName": "Crystal Palace"
+         }
+        },
+        "drawOdds": {
+         "summary": "5/2",
+         "value": 3.5,
+         "handicap": 0.0
+        }
+       }
+      ],
+      "wasSuspended": false,
+      "playByPlayAvailable": true,
+      "playByPlayAthletes": true
+     }
+    ],
+    "status": {
+     "clock": 0.0,
+     "displayClock": "0'",
+     "type": {
+      "id": "1",
+      "name": "STATUS_SCHEDULED",
+      "state": "pre",
+      "completed": false,
+      "description": "Scheduled",
+      "detail": "Sun, October 25th at 10:00 AM EDT",
+      "shortDetail": "Scheduled"
+     }
+    }
+   }
+  ]
+ },
+ "soc_esp.1_20261025": {
+  "leagues": [
+   {
+    "id": "740",
+    "name": "Spanish LALIGA",
+    "abbreviation": "LALIGA",
+    "midsizeName": "ESP.1",
+    "slug": "esp.1",
+    "season": {
+     "year": 2026,
+     "startDate": "2026-06-01T04:00Z",
+     "endDate": "2027-06-01T03:59Z",
+     "displayName": "2026-27 Spanish LALIGA",
+     "type": {
+      "id": "1",
+      "type": 14357,
+      "name": "2026-27 LALIGA",
+      "abbreviation": "2026-27 LALIGA"
+     }
+    },
+    "calendarType": "day",
+    "calendarIsWhitelist": true,
+    "calendarStartDate": "2026-06-01T04:00Z",
+    "calendarEndDate": "2027-06-01T03:59Z"
+   }
+  ],
+  "events": [
+   {
+    "id": "401882835",
+    "date": "2026-10-25T13:00Z",
+    "name": "Getafe at Athletic Club",
+    "shortName": "GET @ ATH",
+    "season": {
+     "year": 2026,
+     "type": 14357,
+     "slug": "2026-27-laliga"
+    },
+    "competitions": [
+     {
+      "id": "401882835",
+      "date": "2026-10-25T13:00Z",
+      "startDate": "2026-10-25T13:00Z",
+      "attendance": 0,
+      "timeValid": true,
+      "recent": false,
+      "status": {
+       "clock": 0.0,
+       "displayClock": "0'",
+       "type": {
+        "id": "1",
+        "name": "STATUS_SCHEDULED",
+        "state": "pre",
+        "completed": false,
+        "description": "Scheduled",
+        "detail": "Sun, October 25th at 9:00 AM EDT",
+        "shortDetail": "Scheduled"
+       }
+      },
+      "altGameNote": "LALIGA",
+      "broadcast": "",
+      "competitors": [
+       {
+        "id": "93",
+        "type": "team",
+        "order": 0,
+        "homeAway": "home",
+        "winner": false,
+        "form": "DDDWW",
+        "score": "0",
+        "team": {
+         "id": "93",
+         "abbreviation": "ATH",
+         "displayName": "Athletic Club",
+         "shortDisplayName": "Athletic",
+         "name": "Athletic Club",
+         "location": "Athletic Club",
+         "color": "C8142F",
+         "alternateColor": "000000",
+         "isActive": true
+        }
+       },
+       {
+        "id": "2922",
+        "type": "team",
+        "order": 1,
+        "homeAway": "away",
+        "winner": false,
+        "form": "DLWLD",
+        "score": "0",
+        "team": {
+         "id": "2922",
+         "abbreviation": "GET",
+         "displayName": "Getafe",
+         "shortDisplayName": "Getafe",
+         "name": "Getafe",
+         "location": "Getafe",
+         "color": "0000ff",
+         "alternateColor": "7F1734",
+         "isActive": true
+        }
+       }
+      ],
+      "odds": [
+       {
+        "overUnder": 2.5,
+        "provider": {
+         "id": "100",
+         "name": "DraftKings",
+         "priority": 1,
+         "displayName": "DraftKings"
+        },
+        "drawOdds": {
+         "moneyLine": 295
+        },
+        "total": {
+         "displayName": "Total",
+         "shortDisplayName": "Total",
+         "over": {
+          "open": {
+           "line": "o2.5",
+           "odds": "+115"
+          },
+          "close": {
+           "line": "o2.5",
+           "odds": "+125"
+          }
+         },
+         "under": {
+          "open": {
+           "line": "u2.5",
+           "odds": "-155"
+          },
+          "close": {
+           "line": "u2.5",
+           "odds": "-160"
+          }
+         }
+        },
+        "pointSpread": {
+         "displayName": "Spread",
+         "shortDisplayName": "Spread",
+         "home": {
+          "open": {
+           "line": "-0.5",
+           "odds": "-180"
+          },
+          "close": {
+           "line": "-0.5",
+           "odds": "-175"
+          }
+         },
+         "away": {
+          "open": {
+           "line": "+0.5",
+           "odds": "+115"
+          },
+          "close": {
+           "line": "+0.5",
+           "odds": "+120"
+          }
+         }
+        },
+        "moneyline": {
+         "displayName": "Moneyline",
+         "shortDisplayName": "ML",
+         "home": {
+          "open": {
+           "odds": "-160"
+          },
+          "close": {
+           "odds": "-155"
+          }
+         },
+         "away": {
+          "open": {
+           "odds": "+425"
+          },
+          "close": {
+           "odds": "+425"
+          }
+         },
+         "draw": {
+          "open": {
+           "odds": "+285"
+          },
+          "close": {
+           "odds": "+295"
+          }
+         }
+        }
+       }
+      ],
+      "wasSuspended": false,
+      "playByPlayAvailable": true,
+      "playByPlayAthletes": true
+     }
+    ],
+    "status": {
+     "clock": 0.0,
+     "displayClock": "0'",
+     "type": {
+      "id": "1",
+      "name": "STATUS_SCHEDULED",
+      "state": "pre",
+      "completed": false,
+      "description": "Scheduled",
+      "detail": "Sun, October 25th at 9:00 AM EDT",
+      "shortDetail": "Scheduled"
+     }
+    }
+   }
+  ]
+ },
+ "cbb_20261104": {
+  "leagues": [
+   {
+    "id": "41",
+    "name": "NCAA Men's Basketball",
+    "abbreviation": "NCAAM",
+    "midsizeName": "NCAAM Basketball",
+    "slug": "mens-college-basketball",
+    "season": {
+     "year": 2027,
+     "startDate": "2026-07-13T07:00Z",
+     "endDate": "2027-04-07T06:59Z",
+     "displayName": "2026-27",
+     "type": {
+      "id": "2",
+      "type": 2,
+      "name": "Regular Season",
+      "abbreviation": "reg"
+     }
+    },
+    "calendarType": "day",
+    "calendarIsWhitelist": true,
+    "calendarStartDate": "2026-07-13T07:00Z",
+    "calendarEndDate": "2027-04-07T06:59Z"
+   }
+  ],
+  "day": {
+   "date": "2026-11-04"
+  },
+  "events": [
+   {
+    "id": "401929171",
+    "date": "2026-11-04T05:00Z",
+    "name": "West Coast Baptist Eagles at Boise State Broncos",
+    "shortName": "WCBC @ BOIS",
+    "season": {
+     "year": 2027,
+     "type": 2,
+     "slug": "regular-season"
+    },
+    "competitions": [
+     {
+      "id": "401929171",
+      "date": "2026-11-04T05:00Z",
+      "attendance": 0,
+      "type": {
+       "id": "1",
+       "abbreviation": "STD"
+      },
+      "timeValid": false,
+      "neutralSite": false,
+      "conferenceCompetition": false,
+      "playByPlayAvailable": false,
+      "recent": false,
+      "competitors": [
+       {
+        "id": "68",
+        "type": "team",
+        "order": 0,
+        "homeAway": "home",
+        "team": {
+         "id": "68",
+         "location": "Boise State",
+         "name": "Broncos",
+         "abbreviation": "BOIS",
+         "displayName": "Boise State Broncos",
+         "shortDisplayName": "Boise St",
+         "color": "0033a0",
+         "alternateColor": "d64309",
+         "isActive": true,
+         "logoDark": "https://a.espncdn.com/i/teamlogos/ncaa/500-dark/68.png",
+         "conferenceId": "21"
+        },
+        "score": "0",
+        "curatedRank": {
+         "current": 99
+        }
+       },
+       {
+        "id": "110418",
+        "type": "team",
+        "order": 1,
+        "homeAway": "away",
+        "team": {
+         "id": "110418",
+         "location": "West Coast Baptist",
+         "name": "Eagles",
+         "abbreviation": "WCBC",
+         "displayName": "West Coast Baptist Eagles",
+         "shortDisplayName": "West Coast",
+         "isActive": false
+        },
+        "score": "0",
+        "curatedRank": {
+         "current": 99
+        }
+       }
+      ],
+      "status": {
+       "clock": 0.0,
+       "displayClock": "0:00",
+       "period": 0,
+       "type": {
+        "id": "1",
+        "name": "STATUS_SCHEDULED",
+        "state": "pre",
+        "completed": false,
+        "description": "Scheduled",
+        "detail": "11/4 - TBD",
+        "shortDetail": "TBD"
+       }
+      },
+      "startDate": "2026-11-04T05:00Z",
+      "broadcast": "",
+      "highlights": []
+     }
+    ],
+    "status": {
+     "clock": 0.0,
+     "displayClock": "0:00",
+     "period": 0,
+     "type": {
+      "id": "1",
+      "name": "STATUS_SCHEDULED",
+      "state": "pre",
+      "completed": false,
+      "description": "Scheduled",
+      "detail": "11/4 - TBD",
+      "shortDetail": "TBD"
+     }
+    }
+   }
+  ]
+ }
+}

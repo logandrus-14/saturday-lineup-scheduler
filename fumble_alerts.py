@@ -84,7 +84,10 @@ def slip_result(slip, game_of):
     for l, r in zip(slip["legs"], legs):
         if r == "won":
             dec *= decimal_odds(l["price"])
-    return "won", slip["stake"] * dec * (slip.get("payoutMul") or 1)
+    base = slip["stake"] * dec * (slip.get("payoutMul") or 1)
+    # Bonuses (lib/features/fumbling/domain/bonuses.dart): extra profit.
+    profit = base - slip["stake"]
+    return "won", base + profit * (slip.get("boost") or 0) if profit > 0 else base
 
 
 # ── Words ─────────────────────────────────────────────────────────────────
@@ -194,6 +197,10 @@ def alert_text(slip, status, payout, game_of=None, earned=False):
                 f"been real money."
                 + (" You earned a card too: open Chaos to pick it."
                    if earned else ""))
+    if slip.get("free"):
+        return ("Bullet dodged 😮‍💨",
+                f"{what} missed. {roast(slip, game_of)} It was your free "
+                f"bet, so it cost nothing.")
     return ("Bullet dodged 😮‍💨",
             f"{what} missed. {roast(slip, game_of)} That would have cost you "
             f"{money(slip['stake'])}.")
@@ -242,6 +249,8 @@ def parse_slip(doc):
             "cashOut": f.get("cashOut"),
             "payoutMul": f.get("payoutMul"),
             "miracle": bool(f.get("miracle")),
+            "boost": f.get("boost"),
+            "free": bool(f.get("free")),
             "createdAt": f.get("createdAt") or ""}
 
 
@@ -252,6 +261,10 @@ def cache_doc_for(leg):
         return "futures_results"
     if gid.startswith("nba"):
         return f"nba_{week}"
+    # The NHL, college basketball, soccer and MLB (daily.py), by day too.
+    for key in ("nhl", "cbb", "soc", "mlb"):
+        if gid.startswith(key):
+            return f"{key}_{week}"
     if gid.startswith("nfl"):
         return f"nfl_{season}_{week // 100}_{week % 100}"
     return f"slate_{season}_{week}"
@@ -269,7 +282,7 @@ def games_in(doc_id, fields):
             out[str(g.get("id"))] = {
                 "final": bool(g.get("completed")),
                 "home": g.get("homePoints"), "away": g.get("awayPoints")}
-        else:  # nfl.py / nba.py's shape
+        else:  # nfl.py / nba.py / daily.py's shape
             out[g["id"]] = {
                 "final": g.get("status") == "final",
                 "home": g.get("homeScore"), "away": g.get("awayScore")}

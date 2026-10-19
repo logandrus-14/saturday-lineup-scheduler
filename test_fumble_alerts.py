@@ -125,6 +125,13 @@ check("nfl", fa.cache_doc_for(leg("spread", gid="nfl401", week=205)),
       "nfl_2026_2_5")
 check("nba", fa.cache_doc_for(leg("spread", gid="nba401", week=20261008)),
       "nba_20261008")
+for key in ("nhl", "cbb", "soc", "mlb"):
+    check(f"{key} (daily.py), by day",
+          fa.cache_doc_for(leg("moneyline", gid=f"{key}401", week=20261019)),
+          f"{key}_20261019")
+check("a soccer draw pushes a moneyline (draw no bet)",
+      fa.leg_result({"market": "moneyline", "home": True, "line": 0},
+                    {"final": True, "home": 1, "away": 1}), "push")
 check("future", fa.cache_doc_for(leg("future", gid="fut_ncaaf_2758_t194")),
       "futures_results")
 check("a decided future is a 1–0 game for its winner",
@@ -223,6 +230,15 @@ check("…and the push says so",
                                "line": 0, "price": -110}] * 4,
                      "stake": 50.0}, "won", 120.0, earned=True)[1]
       .endswith("You earned a card too: open Chaos to pick it."), True)
+
+# ── Bonuses (Oct 18 2026, bonuses.dart): extra profit, and a free bet ────
+boosted = {"legs": [leg("moneyline", price=100)], "stake": 100.0, "boost": 0.1}
+check("a boost adds to the profit", fa.slip_result(boosted, lambda g: final),
+      ("won", 210.0))
+check("a missed free bet cost nothing",
+      "cost nothing" in fa.alert_text(
+          {"legs": [leg("moneyline")], "stake": 25.0, "free": True},
+          "lost", 0.0)[1], True)
 
 print(f"{checks - failures}/{checks} fumble alert checks pass")
 sys.exit(1 if failures else 0)

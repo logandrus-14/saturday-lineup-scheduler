@@ -26,6 +26,10 @@ family, so each tick also refreshes today's (and yesterday's, for games past
 midnight) NBA games, and the shift stays awake while either league has
 something on. The workflow gained nightly starts for the NBA.
 
+**SO DO THE NHL, COLLEGE BASKETBALL, SOCCER AND MLB (Oct 18 2026).** Logan:
+"as many more sports as we can for free right now to always have something
+to bet on" — daily.py, the same ESPN family, the same ride.
+
 **SHIFTS HAND OVER TO EACH OTHER (Oct 8 2026).** GitHub's timer could not
 be trusted: the evening start was run four hours late on Oct 5, and on Oct 8
 all ten evening starts were skipped — Logan: "bets arent working". So a
@@ -33,8 +37,8 @@ shift no longer ends when nothing is on. It idles (re-checking every half
 hour) until its time is up, then tells the workflow to start the next shift
 (`chain=yes` in $GITHUB_OUTPUT → `gh workflow run`), which GitHub runs at
 once. In season that is one unbroken watch; the timed starts remain only to
-restart the chain if it ever breaks. July, between the seasons, it lets
-the chain go.
+restart the chain if it ever breaks. (Until Oct 18 2026 it let the chain
+go in July; with baseball and MLS on the board there is no off month.)
 
     FIREBASE_SERVICE_ACCOUNT=... python3 nfl_live.py
 """
@@ -45,8 +49,8 @@ import os
 import time
 
 from update_cache import (  # noqa: E402
-    READS, access_token, notify_fumble_slips, write_nba_cache,
-    write_nfl_cache)
+    READS, access_token, notify_fumble_slips, write_daily_cache,
+    write_nba_cache, write_nfl_cache)
 
 MAX_SHIFT = dt.timedelta(hours=5, minutes=30)
 LIVE_INTERVAL = 60
@@ -108,9 +112,10 @@ IDLE_RECHECK = 30 * 60
 
 
 def chain_on(now):
-    """Whether this shift should start the next one. Always, except in July
-    — the one month with neither an NFL nor an NBA game."""
-    return now.month != 7
+    """Whether this shift should start the next one. Always: July used to be
+    the one month with neither an NFL nor an NBA game, but baseball and MLS
+    play all summer (Oct 18 2026, daily.py)."""
+    return True
 
 
 def idle_delay(now, deadline):
@@ -168,8 +173,12 @@ def _shift():
         if with_next and nfl_games is not None:
             next_cached = now
         nba_games = write_nba_cache(token, live=True)  # never raises
+        # The NHL, college hoops, soccer and MLB ride along too (Oct 18
+        # 2026) — only a day with something on is fetched each minute.
+        more = write_daily_cache(token, live=True)  # never raises
         games = None if nfl_games is None and nba_games is None \
-            else (nfl_games or []) + (nba_games or [])
+            and more is None \
+            else (nfl_games or []) + (nba_games or []) + (more or [])
         if games is None:
             misses += 1
             print(f"  tick wrote nothing ({misses}/{MAX_MISSES})")

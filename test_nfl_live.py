@@ -50,8 +50,8 @@ check("no games: done", next_delay([], now, end), None)
 
 # ── Handing over (Oct 8 2026) ─────────────────────────────────────────────
 check("in season, a shift starts the next one", chain_on(now), True)
-check("in July, between seasons, it lets the chain go",
-      chain_on(dt.datetime(2027, 7, 10, tzinfo=dt.timezone.utc)), False)
+check("July too — baseball and MLS play all summer",
+      chain_on(dt.datetime(2027, 7, 10, tzinfo=dt.timezone.utc)), True)
 check("idle: look again in half an hour", idle_delay(now, end), IDLE_RECHECK)
 check("idle near the end: only until the deadline",
       idle_delay(end - dt.timedelta(minutes=5), end), 300)
