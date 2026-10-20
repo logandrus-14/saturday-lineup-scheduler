@@ -184,12 +184,12 @@ SCOPES = " ".join([
 ])
 
 
-def access_token(key: dict) -> str:
+def access_token(key: dict, scope: str = SCOPES) -> str:
     now = int(dt.datetime.now().timestamp())
     header = _b64url(json.dumps({"alg": "RS256", "typ": "JWT"}).encode())
     payload = _b64url(json.dumps({
         "iss": key["client_email"],
-        "scope": SCOPES,
+        "scope": scope,
         "aud": key["token_uri"],
         "iat": now,
         "exp": now + 3600,
@@ -2711,6 +2711,72 @@ def write_daily_cache(token, live=False):
     return out if any_ok else None
 
 
+def clean_up_deleted_accounts(key, token):
+    """Erase the Fumbling data of accounts deleted in the app — see
+    account_cleanup.py. Never raises."""
+    import account_cleanup
+
+    def delete(path):
+        req = urllib.request.Request(
+            f"{FS}/{PARENT}/{path}", method="DELETE",
+            headers={"Authorization": f"Bearer {token}"})
+        try:
+            _send_write(req)
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+        written(path)
+
+    def commit(writes):
+        _send_write(urllib.request.Request(
+            f"{FS}/{PARENT}:commit", method="POST",
+            data=json.dumps({"writes": writes}).encode(),
+            headers={"Authorization": f"Bearer {token}",
+                     "Content-Type": "application/json"}))
+
+    def query(coll, field, op, value):
+        body = {"structuredQuery": {
+            "from": [{"collectionId": coll}],
+            "where": {"fieldFilter": {
+                "field": {"fieldPath": field}, "op": op,
+                "value": {"stringValue": value}}}}}
+        req = urllib.request.Request(
+            f"{FS}/{PARENT}:runQuery", data=json.dumps(body).encode(),
+            method="POST",
+            headers={"Authorization": f"Bearer {token}",
+                     "Content-Type": "application/json"})
+        rows = json.load(urllib.request.urlopen(req, timeout=20))
+        READS["made"] += max(1, len(rows))
+        return [r["document"] for r in rows if "document" in r]
+
+    auth = {}
+
+    def account_gone(uid):
+        # The sign-in list needs the wider scope; asked for only when
+        # there's a marker to check.
+        if "token" not in auth:
+            auth["token"] = access_token(
+                key, "https://www.googleapis.com/auth/cloud-platform")
+        req = urllib.request.Request(
+            "https://identitytoolkit.googleapis.com/v1/projects/"
+            f"{PROJECT}/accounts:lookup",
+            data=json.dumps({"localId": [uid]}).encode(), method="POST",
+            headers={"Authorization": f"Bearer {auth['token']}",
+                     "Content-Type": "application/json"})
+        found = json.load(urllib.request.urlopen(req, timeout=20))
+        return not found.get("users")
+
+    try:
+        if not fs_list(token, "deletions"):
+            return
+        n = account_cleanup.run(lambda c: fs_list(token, c), query, delete,
+                                commit, account_gone)
+        if n:
+            print(f"account cleanup: {n} deleted account(s) erased")
+    except Exception as e:
+        print(f"account cleanup skipped: {e}")
+
+
 def notify_fumble_slips(token):
     """A push for every Fumbling slip that has cashed or fumbled since last
     time — see fumble_alerts.py — and the friend games' pushes
@@ -2817,6 +2883,7 @@ def main():
     write_nba_cache(token)
     write_daily_cache(token)  # NHL, college hoops, soccer, MLB
     notify_fumble_slips(token)
+    clean_up_deleted_accounts(key, token)
     write_futures_cache(token, futures_season(dt.datetime.now(dt.timezone.utc)))
 
     # Bail out before spending a single CFBD call if the cache is already
