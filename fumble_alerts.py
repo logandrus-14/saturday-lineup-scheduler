@@ -84,7 +84,11 @@ def slip_result(slip, game_of):
     for l, r in zip(slip["legs"], legs):
         if r == "won":
             dec *= decimal_odds(l["price"])
-    base = slip["stake"] * dec * (slip.get("payoutMul") or 1)
+    mul = slip.get("payoutMul") or 1
+    # Under 1 (Replacement Refs, Chalk Tax) it cuts only the winnings —
+    # fumbling.dart's boostedPayout.
+    base = (slip["stake"] + (slip["stake"] * dec - slip["stake"]) * mul
+            if mul < 1 else slip["stake"] * dec * mul)
     # Bonuses (lib/features/fumbling/domain/bonuses.dart): extra profit.
     profit = base - slip["stake"]
     return "won", base + profit * (slip.get("boost") or 0) if profit > 0 else base
