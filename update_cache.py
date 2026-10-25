@@ -20,6 +20,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 
@@ -2775,6 +2776,51 @@ def clean_up_deleted_accounts(key, token):
             print(f"account cleanup: {n} deleted account(s) erased")
     except Exception as e:
         print(f"account cleanup skipped: {e}")
+
+
+def update_fumbling_activities(token):
+    """Fumbling's Live Activities for live slips — see fumble_live.py. Run
+    every live tick (nfl_live.py). Never raises."""
+    import fumble_live
+    import live_activity
+
+    p8 = os.environ.get("APNS_KEY_P8", "").replace("\\n", "\n").strip()
+    if not p8:
+        return 0
+    try:
+        rows = [r for r in fs_query_group(token, "live")
+                if "/fumbling/" in r.get("name", "")]
+        if not rows:
+            return 0
+
+        def push(device, state):
+            sandbox = any(
+                (r.get("fields", {}).get("sandbox") or {}).get("booleanValue")
+                for r in rows
+                if (r.get("fields", {}).get("token") or {}).get("stringValue")
+                == device)
+            if state is None:
+                status, body = live_activity.send_update(
+                    device, {}, p8, event="end", dismiss_after=0,
+                    sandbox=sandbox, topic=fumble_live.TOPIC)
+            else:
+                status, body = live_activity.send_update(
+                    device, state, p8, sandbox=sandbox,
+                    topic=fumble_live.TOPIC)
+            if status != 200:
+                print(f"  fumbling activity push {status}: {body[:160]}")
+            return not live_activity.is_dead_token(status, body)
+
+        n = fumble_live.run(rows, lambda p: fs_get(token, p),
+                            lambda p: fs_list(token, p),
+                            lambda p: fs_delete(token, p), push,
+                            time.time())
+        if n:
+            print(f"fumbling activities: {n} updated")
+        return n
+    except Exception as e:
+        print(f"fumbling activities skipped: {e}")
+        return 0
 
 
 def notify_fumble_slips(token):

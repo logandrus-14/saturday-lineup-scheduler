@@ -1,0 +1,794 @@
+{
+ "note": "Run by test/fumble_live_test.dart AND scheduler/test_fumble_live.py: the Live Activity's content must come out the same from the app and the scheduler. Expectations were produced by fumble_live.py and checked by hand.",
+ "cases": [
+  {
+   "name": "a covering single is the big one; a later game is a tile",
+   "games": [
+    {
+     "id": "nfl1",
+     "awayTeam": "Las Vegas Raiders",
+     "homeTeam": "Kansas City Chiefs",
+     "awayScore": 17,
+     "homeScore": 24,
+     "status": "live",
+     "start": "2026-10-25T17:00:00Z",
+     "period": 3,
+     "clock": "8:14"
+    },
+    {
+     "id": "nfl2",
+     "awayTeam": "Green Bay Packers",
+     "homeTeam": "Chicago Bears",
+     "awayScore": 20,
+     "homeScore": 13,
+     "status": "live",
+     "start": "2026-10-25T20:25:00Z",
+     "period": 4,
+     "clock": "2:10"
+    },
+    {
+     "id": "nfl3",
+     "awayTeam": "Buffalo Bills",
+     "homeTeam": "Miami Dolphins",
+     "awayScore": null,
+     "homeScore": null,
+     "status": "scheduled",
+     "start": "2026-10-26T00:20:00Z",
+     "period": null,
+     "clock": null
+    },
+    {
+     "id": "nfl4",
+     "awayTeam": "Indianapolis Colts",
+     "homeTeam": "New England Patriots",
+     "awayScore": 13,
+     "homeScore": 20,
+     "status": "final",
+     "start": "2026-10-25T17:00:00Z",
+     "period": null,
+     "clock": null
+    },
+    {
+     "id": "nhl5",
+     "awayTeam": "Boston Bruins",
+     "homeTeam": "New York Rangers",
+     "awayScore": 2,
+     "homeScore": 3,
+     "status": "live",
+     "start": "2026-10-25T23:00:00Z",
+     "period": 2,
+     "clock": "12:34"
+    },
+    {
+     "id": "nba6",
+     "awayTeam": "Phoenix Suns",
+     "homeTeam": "Los Angeles Lakers",
+     "awayScore": 101,
+     "homeScore": 99,
+     "status": "live",
+     "start": "2026-10-26T02:00:00Z",
+     "period": 5,
+     "clock": "1:02"
+    }
+   ],
+   "slips": [
+    {
+     "id": "s1",
+     "legs": [
+      {
+       "gameId": "nfl1",
+       "season": 2026,
+       "week": 8,
+       "market": "spread",
+       "home": true,
+       "homeTeam": "Kansas City Chiefs",
+       "awayTeam": "Las Vegas Raiders",
+       "line": -5.5,
+       "price": -110
+      }
+     ],
+     "stake": 100,
+     "createdAt": "2026-10-25T16:00:00Z"
+    },
+    {
+     "id": "s2",
+     "legs": [
+      {
+       "gameId": "nfl2",
+       "season": 2026,
+       "week": 8,
+       "market": "total",
+       "home": true,
+       "homeTeam": "Chicago Bears",
+       "awayTeam": "Green Bay Packers",
+       "line": 47.5,
+       "price": -110
+      }
+     ],
+     "stake": 50,
+     "createdAt": "2026-10-25T16:05:00Z"
+    },
+    {
+     "id": "s3",
+     "legs": [
+      {
+       "gameId": "nfl3",
+       "season": 2026,
+       "week": 8,
+       "market": "moneyline",
+       "home": true,
+       "homeTeam": "Miami Dolphins",
+       "awayTeam": "Buffalo Bills",
+       "line": 0,
+       "price": 130
+      }
+     ],
+     "stake": 25,
+     "createdAt": "2026-10-25T16:10:00Z"
+    },
+    {
+     "id": "s4",
+     "legs": [
+      {
+       "gameId": "nfl4",
+       "season": 2026,
+       "week": 8,
+       "market": "spread",
+       "home": false,
+       "homeTeam": "New England Patriots",
+       "awayTeam": "Indianapolis Colts",
+       "line": 3,
+       "price": -110
+      }
+     ],
+     "stake": 100,
+     "createdAt": "2026-10-24T16:10:00Z"
+    }
+   ],
+   "expect": {
+    "away": "Las Vegas Raiders",
+    "home": "Kansas City Chiefs",
+    "awayScore": "17",
+    "homeScore": "24",
+    "clock": "Q3 8:14",
+    "pick": "Kansas City Chiefs −5.5",
+    "status": "COVERING",
+    "accent": "good",
+    "pay": "to win $90.91",
+    "tiles": [
+     {
+      "label": "Over 47.5",
+      "value": "NOT HITTING",
+      "accent": "bad"
+     }
+    ],
+    "more": 0,
+    "live": 2
+   }
+  },
+  {
+   "name": "a parlay: one leg in, the live one winning",
+   "games": [
+    {
+     "id": "nfl1",
+     "awayTeam": "Las Vegas Raiders",
+     "homeTeam": "Kansas City Chiefs",
+     "awayScore": 17,
+     "homeScore": 24,
+     "status": "live",
+     "start": "2026-10-25T17:00:00Z",
+     "period": 3,
+     "clock": "8:14"
+    },
+    {
+     "id": "nfl2",
+     "awayTeam": "Green Bay Packers",
+     "homeTeam": "Chicago Bears",
+     "awayScore": 20,
+     "homeScore": 13,
+     "status": "live",
+     "start": "2026-10-25T20:25:00Z",
+     "period": 4,
+     "clock": "2:10"
+    },
+    {
+     "id": "nfl3",
+     "awayTeam": "Buffalo Bills",
+     "homeTeam": "Miami Dolphins",
+     "awayScore": null,
+     "homeScore": null,
+     "status": "scheduled",
+     "start": "2026-10-26T00:20:00Z",
+     "period": null,
+     "clock": null
+    },
+    {
+     "id": "nfl4",
+     "awayTeam": "Indianapolis Colts",
+     "homeTeam": "New England Patriots",
+     "awayScore": 13,
+     "homeScore": 20,
+     "status": "final",
+     "start": "2026-10-25T17:00:00Z",
+     "period": null,
+     "clock": null
+    },
+    {
+     "id": "nhl5",
+     "awayTeam": "Boston Bruins",
+     "homeTeam": "New York Rangers",
+     "awayScore": 2,
+     "homeScore": 3,
+     "status": "live",
+     "start": "2026-10-25T23:00:00Z",
+     "period": 2,
+     "clock": "12:34"
+    },
+    {
+     "id": "nba6",
+     "awayTeam": "Phoenix Suns",
+     "homeTeam": "Los Angeles Lakers",
+     "awayScore": 101,
+     "homeScore": 99,
+     "status": "live",
+     "start": "2026-10-26T02:00:00Z",
+     "period": 5,
+     "clock": "1:02"
+    }
+   ],
+   "slips": [
+    {
+     "id": "p1",
+     "legs": [
+      {
+       "gameId": "nfl4",
+       "season": 2026,
+       "week": 8,
+       "market": "moneyline",
+       "home": true,
+       "homeTeam": "New England Patriots",
+       "awayTeam": "Indianapolis Colts",
+       "line": 0,
+       "price": -140
+      },
+      {
+       "gameId": "nfl2",
+       "season": 2026,
+       "week": 8,
+       "market": "moneyline",
+       "home": false,
+       "homeTeam": "Chicago Bears",
+       "awayTeam": "Green Bay Packers",
+       "line": 0,
+       "price": -120
+      }
+     ],
+     "stake": 25,
+     "createdAt": "2026-10-25T15:00:00Z"
+    }
+   ],
+   "expect": {
+    "away": "Green Bay Packers",
+    "home": "Chicago Bears",
+    "awayScore": "20",
+    "homeScore": "13",
+    "clock": "Q4 2:10",
+    "pick": "Parlay · 2 legs",
+    "status": "1 OF 2 HIT",
+    "accent": "good",
+    "pay": "to win $53.57",
+    "tiles": [],
+    "more": 0,
+    "live": 1
+   }
+  },
+  {
+   "name": "nothing live, nothing to show",
+   "games": [
+    {
+     "id": "nfl1",
+     "awayTeam": "Las Vegas Raiders",
+     "homeTeam": "Kansas City Chiefs",
+     "awayScore": 17,
+     "homeScore": 24,
+     "status": "live",
+     "start": "2026-10-25T17:00:00Z",
+     "period": 3,
+     "clock": "8:14"
+    },
+    {
+     "id": "nfl2",
+     "awayTeam": "Green Bay Packers",
+     "homeTeam": "Chicago Bears",
+     "awayScore": 20,
+     "homeScore": 13,
+     "status": "live",
+     "start": "2026-10-25T20:25:00Z",
+     "period": 4,
+     "clock": "2:10"
+    },
+    {
+     "id": "nfl3",
+     "awayTeam": "Buffalo Bills",
+     "homeTeam": "Miami Dolphins",
+     "awayScore": null,
+     "homeScore": null,
+     "status": "scheduled",
+     "start": "2026-10-26T00:20:00Z",
+     "period": null,
+     "clock": null
+    },
+    {
+     "id": "nfl4",
+     "awayTeam": "Indianapolis Colts",
+     "homeTeam": "New England Patriots",
+     "awayScore": 13,
+     "homeScore": 20,
+     "status": "final",
+     "start": "2026-10-25T17:00:00Z",
+     "period": null,
+     "clock": null
+    },
+    {
+     "id": "nhl5",
+     "awayTeam": "Boston Bruins",
+     "homeTeam": "New York Rangers",
+     "awayScore": 2,
+     "homeScore": 3,
+     "status": "live",
+     "start": "2026-10-25T23:00:00Z",
+     "period": 2,
+     "clock": "12:34"
+    },
+    {
+     "id": "nba6",
+     "awayTeam": "Phoenix Suns",
+     "homeTeam": "Los Angeles Lakers",
+     "awayScore": 101,
+     "homeScore": 99,
+     "status": "live",
+     "start": "2026-10-26T02:00:00Z",
+     "period": 5,
+     "clock": "1:02"
+    }
+   ],
+   "slips": [
+    {
+     "id": "x",
+     "legs": [
+      {
+       "gameId": "nfl3",
+       "season": 2026,
+       "week": 8,
+       "market": "moneyline",
+       "home": true,
+       "homeTeam": "Miami Dolphins",
+       "awayTeam": "Buffalo Bills",
+       "line": 0,
+       "price": 130
+      }
+     ],
+     "stake": 25,
+     "createdAt": "2026-10-25T16:10:00Z"
+    }
+   ],
+   "expect": null
+  },
+  {
+   "name": "hockey under, a payout cut, and NBA overtime as a tile",
+   "games": [
+    {
+     "id": "nfl1",
+     "awayTeam": "Las Vegas Raiders",
+     "homeTeam": "Kansas City Chiefs",
+     "awayScore": 17,
+     "homeScore": 24,
+     "status": "live",
+     "start": "2026-10-25T17:00:00Z",
+     "period": 3,
+     "clock": "8:14"
+    },
+    {
+     "id": "nfl2",
+     "awayTeam": "Green Bay Packers",
+     "homeTeam": "Chicago Bears",
+     "awayScore": 20,
+     "homeScore": 13,
+     "status": "live",
+     "start": "2026-10-25T20:25:00Z",
+     "period": 4,
+     "clock": "2:10"
+    },
+    {
+     "id": "nfl3",
+     "awayTeam": "Buffalo Bills",
+     "homeTeam": "Miami Dolphins",
+     "awayScore": null,
+     "homeScore": null,
+     "status": "scheduled",
+     "start": "2026-10-26T00:20:00Z",
+     "period": null,
+     "clock": null
+    },
+    {
+     "id": "nfl4",
+     "awayTeam": "Indianapolis Colts",
+     "homeTeam": "New England Patriots",
+     "awayScore": 13,
+     "homeScore": 20,
+     "status": "final",
+     "start": "2026-10-25T17:00:00Z",
+     "period": null,
+     "clock": null
+    },
+    {
+     "id": "nhl5",
+     "awayTeam": "Boston Bruins",
+     "homeTeam": "New York Rangers",
+     "awayScore": 2,
+     "homeScore": 3,
+     "status": "live",
+     "start": "2026-10-25T23:00:00Z",
+     "period": 2,
+     "clock": "12:34"
+    },
+    {
+     "id": "nba6",
+     "awayTeam": "Phoenix Suns",
+     "homeTeam": "Los Angeles Lakers",
+     "awayScore": 101,
+     "homeScore": 99,
+     "status": "live",
+     "start": "2026-10-26T02:00:00Z",
+     "period": 5,
+     "clock": "1:02"
+    }
+   ],
+   "slips": [
+    {
+     "id": "h1",
+     "legs": [
+      {
+       "gameId": "nhl5",
+       "season": 2026,
+       "week": 8,
+       "market": "total",
+       "home": false,
+       "homeTeam": "New York Rangers",
+       "awayTeam": "Boston Bruins",
+       "line": 6.5,
+       "price": -105
+      }
+     ],
+     "stake": 40,
+     "createdAt": "2026-10-25T22:00:00Z",
+     "payoutMul": 0.8
+    },
+    {
+     "id": "b1",
+     "legs": [
+      {
+       "gameId": "nba6",
+       "season": 2026,
+       "week": 8,
+       "market": "spread",
+       "home": true,
+       "homeTeam": "Los Angeles Lakers",
+       "awayTeam": "Phoenix Suns",
+       "line": 2.5,
+       "price": -110
+      }
+     ],
+     "stake": 10,
+     "createdAt": "2026-10-25T22:30:00Z"
+    }
+   ],
+   "expect": {
+    "away": "Boston Bruins",
+    "home": "New York Rangers",
+    "awayScore": "2",
+    "homeScore": "3",
+    "clock": "P2 12:34",
+    "pick": "Under 6.5",
+    "status": "HITTING",
+    "accent": "good",
+    "pay": "to win $30.48",
+    "tiles": [
+     {
+      "label": "Los Angeles Lakers +2.5",
+      "value": "COVERING",
+      "accent": "good"
+     }
+    ],
+    "more": 0,
+    "live": 2
+   }
+  },
+  {
+   "name": "five live: four shown, one more",
+   "games": [
+    {
+     "id": "nfl1",
+     "awayTeam": "Las Vegas Raiders",
+     "homeTeam": "Kansas City Chiefs",
+     "awayScore": 17,
+     "homeScore": 24,
+     "status": "live",
+     "start": "2026-10-25T17:00:00Z",
+     "period": 3,
+     "clock": "8:14"
+    },
+    {
+     "id": "nfl2",
+     "awayTeam": "Green Bay Packers",
+     "homeTeam": "Chicago Bears",
+     "awayScore": 20,
+     "homeScore": 13,
+     "status": "live",
+     "start": "2026-10-25T20:25:00Z",
+     "period": 4,
+     "clock": "2:10"
+    },
+    {
+     "id": "nfl3",
+     "awayTeam": "Buffalo Bills",
+     "homeTeam": "Miami Dolphins",
+     "awayScore": null,
+     "homeScore": null,
+     "status": "scheduled",
+     "start": "2026-10-26T00:20:00Z",
+     "period": null,
+     "clock": null
+    },
+    {
+     "id": "nfl4",
+     "awayTeam": "Indianapolis Colts",
+     "homeTeam": "New England Patriots",
+     "awayScore": 13,
+     "homeScore": 20,
+     "status": "final",
+     "start": "2026-10-25T17:00:00Z",
+     "period": null,
+     "clock": null
+    },
+    {
+     "id": "nhl5",
+     "awayTeam": "Boston Bruins",
+     "homeTeam": "New York Rangers",
+     "awayScore": 2,
+     "homeScore": 3,
+     "status": "live",
+     "start": "2026-10-25T23:00:00Z",
+     "period": 2,
+     "clock": "12:34"
+    },
+    {
+     "id": "nba6",
+     "awayTeam": "Phoenix Suns",
+     "homeTeam": "Los Angeles Lakers",
+     "awayScore": 101,
+     "homeScore": 99,
+     "status": "live",
+     "start": "2026-10-26T02:00:00Z",
+     "period": 5,
+     "clock": "1:02"
+    }
+   ],
+   "slips": [
+    {
+     "id": "m0",
+     "legs": [
+      {
+       "gameId": "nfl1",
+       "season": 2026,
+       "week": 8,
+       "market": "spread",
+       "home": true,
+       "homeTeam": "Kansas City Chiefs",
+       "awayTeam": "Las Vegas Raiders",
+       "line": -5.5,
+       "price": -110
+      }
+     ],
+     "stake": 10,
+     "createdAt": "2026-10-25T16:00:00Z"
+    },
+    {
+     "id": "m1",
+     "legs": [
+      {
+       "gameId": "nfl1",
+       "season": 2026,
+       "week": 8,
+       "market": "spread",
+       "home": true,
+       "homeTeam": "Kansas City Chiefs",
+       "awayTeam": "Las Vegas Raiders",
+       "line": -5.5,
+       "price": -110
+      }
+     ],
+     "stake": 11,
+     "createdAt": "2026-10-25T16:01:00Z"
+    },
+    {
+     "id": "m2",
+     "legs": [
+      {
+       "gameId": "nfl1",
+       "season": 2026,
+       "week": 8,
+       "market": "spread",
+       "home": true,
+       "homeTeam": "Kansas City Chiefs",
+       "awayTeam": "Las Vegas Raiders",
+       "line": -5.5,
+       "price": -110
+      }
+     ],
+     "stake": 12,
+     "createdAt": "2026-10-25T16:02:00Z"
+    },
+    {
+     "id": "m3",
+     "legs": [
+      {
+       "gameId": "nfl1",
+       "season": 2026,
+       "week": 8,
+       "market": "spread",
+       "home": true,
+       "homeTeam": "Kansas City Chiefs",
+       "awayTeam": "Las Vegas Raiders",
+       "line": -5.5,
+       "price": -110
+      }
+     ],
+     "stake": 13,
+     "createdAt": "2026-10-25T16:03:00Z"
+    },
+    {
+     "id": "m4",
+     "legs": [
+      {
+       "gameId": "nfl1",
+       "season": 2026,
+       "week": 8,
+       "market": "spread",
+       "home": true,
+       "homeTeam": "Kansas City Chiefs",
+       "awayTeam": "Las Vegas Raiders",
+       "line": -5.5,
+       "price": -110
+      }
+     ],
+     "stake": 14,
+     "createdAt": "2026-10-25T16:04:00Z"
+    }
+   ],
+   "expect": {
+    "away": "Las Vegas Raiders",
+    "home": "Kansas City Chiefs",
+    "awayScore": "17",
+    "homeScore": "24",
+    "clock": "Q3 8:14",
+    "pick": "Kansas City Chiefs −5.5",
+    "status": "COVERING",
+    "accent": "good",
+    "pay": "to win $9.09",
+    "tiles": [
+     {
+      "label": "Kansas City Chiefs −5.5",
+      "value": "COVERING",
+      "accent": "good"
+     },
+     {
+      "label": "Kansas City Chiefs −5.5",
+      "value": "COVERING",
+      "accent": "good"
+     },
+     {
+      "label": "Kansas City Chiefs −5.5",
+      "value": "COVERING",
+      "accent": "good"
+     }
+    ],
+    "more": 1,
+    "live": 5
+   }
+  },
+  {
+   "name": "a cashed-out slip isn't live",
+   "games": [
+    {
+     "id": "nfl1",
+     "awayTeam": "Las Vegas Raiders",
+     "homeTeam": "Kansas City Chiefs",
+     "awayScore": 17,
+     "homeScore": 24,
+     "status": "live",
+     "start": "2026-10-25T17:00:00Z",
+     "period": 3,
+     "clock": "8:14"
+    },
+    {
+     "id": "nfl2",
+     "awayTeam": "Green Bay Packers",
+     "homeTeam": "Chicago Bears",
+     "awayScore": 20,
+     "homeScore": 13,
+     "status": "live",
+     "start": "2026-10-25T20:25:00Z",
+     "period": 4,
+     "clock": "2:10"
+    },
+    {
+     "id": "nfl3",
+     "awayTeam": "Buffalo Bills",
+     "homeTeam": "Miami Dolphins",
+     "awayScore": null,
+     "homeScore": null,
+     "status": "scheduled",
+     "start": "2026-10-26T00:20:00Z",
+     "period": null,
+     "clock": null
+    },
+    {
+     "id": "nfl4",
+     "awayTeam": "Indianapolis Colts",
+     "homeTeam": "New England Patriots",
+     "awayScore": 13,
+     "homeScore": 20,
+     "status": "final",
+     "start": "2026-10-25T17:00:00Z",
+     "period": null,
+     "clock": null
+    },
+    {
+     "id": "nhl5",
+     "awayTeam": "Boston Bruins",
+     "homeTeam": "New York Rangers",
+     "awayScore": 2,
+     "homeScore": 3,
+     "status": "live",
+     "start": "2026-10-25T23:00:00Z",
+     "period": 2,
+     "clock": "12:34"
+    },
+    {
+     "id": "nba6",
+     "awayTeam": "Phoenix Suns",
+     "homeTeam": "Los Angeles Lakers",
+     "awayScore": 101,
+     "homeScore": 99,
+     "status": "live",
+     "start": "2026-10-26T02:00:00Z",
+     "period": 5,
+     "clock": "1:02"
+    }
+   ],
+   "slips": [
+    {
+     "id": "c1",
+     "legs": [
+      {
+       "gameId": "nfl1",
+       "season": 2026,
+       "week": 8,
+       "market": "spread",
+       "home": true,
+       "homeTeam": "Kansas City Chiefs",
+       "awayTeam": "Las Vegas Raiders",
+       "line": -5.5,
+       "price": -110
+      }
+     ],
+     "stake": 100,
+     "createdAt": "2026-10-25T16:00:00Z",
+     "cashOut": 95.0
+    }
+   ],
+   "expect": null
+  }
+ ]
+}

@@ -49,7 +49,8 @@ import os
 import time
 
 from update_cache import (  # noqa: E402
-    READS, access_token, notify_fumble_slips, write_daily_cache,
+    READS, access_token, notify_fumble_slips, update_fumbling_activities,
+    write_daily_cache,
     write_nba_cache, write_nfl_cache)
 
 MAX_SHIFT = dt.timedelta(hours=5, minutes=30)
@@ -188,6 +189,8 @@ def _shift():
             time.sleep(LIVE_INTERVAL)
             continue
         misses = 0
+        # Fumbling's Live Activities move with every tick (never raises).
+        update_fumbling_activities(token)
         if now - fumbles_checked >= FUMBLE_EVERY:
             notify_fumble_slips(token)  # never raises
             fumbles_checked = now

@@ -244,6 +244,7 @@ def send_update(
     stale_after: int = 30 * 60,
     dismiss_after: int | None = None,
     timeout: int = 15,
+    topic: str = TOPIC,
 ) -> tuple[int, str]:
     """Push one content state to one Live Activity. Returns (status, body).
 
@@ -284,7 +285,9 @@ def send_update(
             "--max-time", str(timeout),
             "--write-out", "\n%{http_code}",
             "--header", f"authorization: bearer {provider_token(p8_pem)}",
-            "--header", f"apns-topic: {TOPIC}",
+            # Saturday Lineup's by default; Fumbling's activities pass their
+            # own (fumble_live.TOPIC) — same key, different app.
+            "--header", f"apns-topic: {topic}",
             "--header", "apns-push-type: liveactivity",
             # 10 = deliver now. Live scores are the case this exists for; at
             # priority 5 iOS is free to sit on them, which for a lock-screen
