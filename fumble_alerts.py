@@ -289,7 +289,10 @@ def games_in(doc_id, fields):
         else:  # nfl.py / nba.py / daily.py's shape
             out[g["id"]] = {
                 "final": g.get("status") == "final",
-                "home": g.get("homeScore"), "away": g.get("awayScore")}
+                "home": g.get("homeScore"), "away": g.get("awayScore"),
+                # For Pro's sweat alerts.
+                "live": g.get("status") == "live",
+                "period": g.get("period"), "clock": g.get("clock")}
     return out
 
 
@@ -321,6 +324,112 @@ def _now():
             .replace("+00:00", "Z"))
 
 
+# ── Pro's smarter alerts (Oct 26 2026) ─────────────────────────────────────
+#
+# Logan's Pro list: "Sweat alerts when a slip is one score away, only for the
+# games you pick." Two, each switched on in the app's Settings (Pro only) and
+# kept at fumbling/{uid}/prefs/alerts {sweat, oneLeg}:
+#   sweat  — late in a game, a leg is within one score of flipping;
+#   oneLeg — a parlay has every leg in but one.
+# Each is sent once per slip (and per leg, for sweat).
+
+def sport_of(game_id):
+    for p, s in (("fut_", "future"), ("nfl", "football"), ("nba", "nba"),
+                 ("cbb", "cbb"), ("nhl", "hockey"), ("soc", "soccer"),
+                 ("mlb", "baseball")):
+        if game_id.startswith(p):
+            return s
+    return "football"
+
+
+# One score, by sport.
+ONE_SCORE = {"football": 8, "nba": 6, "cbb": 6, "hockey": 1, "soccer": 1,
+             "baseball": 1}
+
+
+def is_late(game_id, game):
+    """In the last part of a live game: football's and the NBA's 4th,
+    college hoops' 2nd half, hockey's 3rd, soccer from the 75th minute,
+    baseball from the 8th."""
+    if not game or not game.get("live"):
+        return False
+    period = game.get("period") or 0
+    sport = sport_of(game_id)
+    if sport == "soccer":
+        clock = str(game.get("clock") or "")
+        mins = "".join(ch for ch in clock.split("'")[0] if ch.isdigit())
+        return period >= 2 and mins.isdigit() and int(mins) >= 75
+    return period >= {"football": 4, "nba": 4, "cbb": 2, "hockey": 3,
+                      "baseball": 8}.get(sport, 99)
+
+
+def leg_margin(leg, game):
+    """How far a leg is winning by right now (negative: losing by), or
+    None. The spread counts; a total is how far past (or short of) the
+    number."""
+    h, a = game.get("home"), game.get("away")
+    if h is None or a is None:
+        return None
+    market = leg["market"]
+    if market == "moneyline":
+        return h - a if leg["home"] else a - h
+    if market == "spread":
+        return (h - a if leg["home"] else a - h) + leg["line"]
+    if market == "total":
+        return (h + a - leg["line"]) * (1 if leg["home"] else -1)
+    return None
+
+
+def sweat_text(slip, leg, margin):
+    """(title, body) for a leg one score from flipping."""
+    what = leg_label(leg)
+    total = leg["market"] == "total"
+    if margin > 0:
+        body = (f"{what} is {'past it' if total else 'covering'} by "
+                f"{_num(margin)}, but one score flips it.")
+    elif margin < 0:
+        body = (f"{what} needs {_num(-margin)} more. One score and you're "
+                f"back in it.")
+    else:
+        body = f"{what} is dead even. Somebody do something."
+    title = "Sweat alert" if len(slip["legs"]) == 1 else (
+        f"Sweat alert · {len(slip['legs'])}-leg parlay")
+    return title, body
+
+
+def one_leg_text(slip, last_leg):
+    dec = 1.0
+    for l in slip["legs"]:
+        dec *= decimal_odds(l["price"])
+    win = slip["stake"] * dec - slip["stake"]
+    return (f"One leg away",
+            f"Your {len(slip['legs'])}-leg parlay just needs {leg_label(last_leg)}. "
+            f"About {money(win)} on the line.")
+
+
+def pro_alerts(slip, results, game_of, prefs):
+    """[(dedupe id, title, body)] for an open slip, by [prefs]."""
+    out = []
+    if prefs.get("sweat"):
+        for leg, r in zip(slip["legs"], results):
+            if r != "open":
+                continue
+            g = game_of(leg["gameId"])
+            if not is_late(leg["gameId"], g):
+                continue
+            m = leg_margin(leg, g)
+            if m is None or abs(m) > ONE_SCORE[sport_of(leg["gameId"])]:
+                continue
+            out.append((f"sweat_{slip['id']}_{leg['gameId']}",)
+                       + sweat_text(slip, leg, m))
+    if prefs.get("oneLeg") and len(slip["legs"]) > 1:
+        open_legs = [l for l, r in zip(slip["legs"], results) if r == "open"]
+        if len(open_legs) == 1 and "won" in results:
+            out.append((f"oneleg_{slip['id']}",)
+                       + one_leg_text(slip, open_legs[0]))
+    return out
+
+
 # ── The pass ──────────────────────────────────────────────────────────────
 
 def run(fs_get, fs_list, fs_patch, send):
@@ -344,6 +453,8 @@ def run(fs_get, fs_list, fs_patch, send):
     # "Can we add a popular tab to the board". Phones can only read their
     # own and their friends' slips; this pass reads everyone's anyway.
     popular = {}
+    # Each player's Pro alert switches, read once a pass.
+    prefs_of = {}
     for owner in fs_list("fumbling"):
         uid = owner["name"].rsplit("/", 1)[-1]
         for doc in fs_list(f"fumbling/{uid}/slips"):
@@ -357,6 +468,22 @@ def run(fs_get, fs_list, fs_patch, send):
             if status == "open":
                 for gid in by_id:
                     popular[gid] = popular.get(gid, 0) + 1
+                if uid not in prefs_of:
+                    doc = fs_get(f"fumbling/{uid}/prefs/alerts") or {}
+                    prefs_of[uid] = {k: _value(v) for k, v in
+                                     doc.get("fields", {}).items()}
+                if launched and prefs_of[uid]:
+                    results = [leg_result(l, game_of(l))
+                               for l in slip["legs"]]
+                    for key_id, title, body in pro_alerts(
+                            slip, results, lambda gid: game_of(by_id[gid]),
+                            prefs_of[uid]):
+                        key = notify.dedupe_key("fumble", uid, key_id)
+                        if notify.already_sent(fs_get, key):
+                            continue
+                        send(uid, title, body)
+                        sent += 1
+                        notify.record_sent(fs_patch, key, "fumble", uid)
             if status not in ("won", "lost"):
                 continue
             key = notify.dedupe_key("fumble", uid, slip["id"])

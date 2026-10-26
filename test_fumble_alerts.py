@@ -240,5 +240,37 @@ check("a missed free bet cost nothing",
           {"legs": [leg("moneyline")], "stake": 25.0, "free": True},
           "lost", 0.0)[1], True)
 
+# ── Pro's smarter alerts (Oct 26 2026) ───────────────────────────────────
+late = {"live": True, "period": 4, "clock": "3:12", "home": 20, "away": 17,
+        "final": False}
+spread = dict(leg("spread"), gameId="nfl1", home=True, line=-3.5)
+one = {"id": "s1", "legs": [spread], "stake": 50.0}
+check("sweat: covering by a hook late in the 4th",
+      [a[0] for a in fa.pro_alerts(one, ["open"], lambda g: late,
+                                   {"sweat": True})], ["sweat_s1_nfl1"])
+check("sweat: nothing without the switch",
+      fa.pro_alerts(one, ["open"], lambda g: late, {}), [])
+check("sweat: nothing in the 2nd quarter",
+      fa.pro_alerts(one, ["open"], lambda g: dict(late, period=2),
+                    {"sweat": True}), [])
+check("sweat: nothing when it's two scores",
+      fa.pro_alerts(one, ["open"], lambda g: dict(late, home=40),
+                    {"sweat": True}), [])
+check("sweat: soccer from the 75th minute",
+      fa.is_late("soc1", {"live": True, "period": 2, "clock": "78'"}), True)
+check("sweat: soccer not at 60'",
+      fa.is_late("soc1", {"live": True, "period": 2, "clock": "60'"}), False)
+check("sweat words: needs it",
+      "needs 1.5" in fa.sweat_text(one, spread, -1.5)[1], True)
+two = {"id": "p1", "stake": 10.0,
+       "legs": [dict(leg("moneyline"), gameId="nba1"), dict(spread)]}
+check("one leg away: a parlay with one leg left",
+      [a[0] for a in fa.pro_alerts(two, ["won", "open"],
+                                   lambda g: {"live": False},
+                                   {"oneLeg": True})], ["oneleg_p1"])
+check("one leg away: not before any leg has hit",
+      fa.pro_alerts(two, ["open", "open"], lambda g: {"live": False},
+                    {"oneLeg": True}), [])
+
 print(f"{checks - failures}/{checks} fumble alert checks pass")
 sys.exit(1 if failures else 0)
