@@ -262,29 +262,72 @@ def report_text(lines):
 
 # ── The pass ─────────────────────────────────────────────────────────────
 
-def run(fs_get, fs_list, fs_patch, send, now=None):
-    """Tell everyone what happened since last time. Returns pushes sent."""
-    now = now or dt.datetime.now(dt.timezone.utc)
+def _teller(fs_get, fs_patch, send):
+    """(tell, sent, launched): tell(key, uid, push) sends a push once, and
+    sent() is how many went out."""
     launched = notify.already_sent(fs_get, LAUNCH_KEY)
-    sent = 0
+    count = [0]
 
     def tell(key, uid, push):
-        nonlocal sent
         if notify.already_sent(fs_get, key):
             return
         if launched and push:
             send(uid, *push)
-            sent += 1
+            count[0] += 1
         notify.record_sent(fs_patch, key, "chaos", uid)
 
+    return tell, lambda: count[0], launched
+
+
+def _tell_props(tell, fs_list, slips_of):
+    """Bets on your slip: a leg whose game id is prop_{owner}_{slip}_{side}."""
+    for owner in fs_list("fumbling"):
+        bettor = _id(owner)
+        name = (_doc(owner).get("name") or "Someone")
+        for d in slips_of(bettor):
+            for leg in _doc(d).get("legs") or []:
+                gid = (leg or {}).get("gameId") or ""
+                if not gid.startswith("prop_"):
+                    continue
+                parts = gid[len("prop_"):].split("_")
+                if len(parts) < 3:
+                    continue
+                target, side = parts[0], parts[-1]
+                what = (leg.get("homeTeam") or "your slip")
+                tell(f"chaos__prop__{_id(d)}", target,
+                     (f"👀 {name} bet on your slip",
+                      f"{name.split(' ')[0]} says it "
+                      f"{'hits' if side == 'hit' else 'misses'}. "
+                      f"({what})"))
+
+
+def run_props(fs_get, fs_list, fs_patch, send, slips_of):
+    """Only the bets on people's slips, from [slips_of](uid) — for the slip
+    pass, which has read those slips already."""
+    tell, sent, _ = _teller(fs_get, fs_patch, send)
+    _tell_props(tell, fs_list, slips_of)
+    return sent()
+
+
+def run(fs_get, fs_list, fs_patch, send, now=None, plays_of=None,
+        week_plays_of=None, duels_of=None, props=True):
+    """Tell everyone what happened since last time. Returns pushes sent.
+
+    [plays_of](crew id) and [duels_of]() are what to look through, everything
+    by default; [week_plays_of](crew id) is what the Monday report counts.
+    props=False leaves bets on slips to run_props."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    plays_of = plays_of or (lambda cid: fs_list(f"crews/{cid}/plays"))
+    week_plays_of = week_plays_of or plays_of
+    duels_of = duels_of or (lambda: fs_list("duels"))
+    tell, sent, launched = _teller(fs_get, fs_patch, send)
+
     crews = [(_id(d), _doc(d)) for d in fs_list("crews")]
-    all_plays = []
     for cid, crew in crews:
         members = crew.get("members") or []
-        for d in fs_list(f"crews/{cid}/plays"):
+        for d in plays_of(cid):
             p = _doc(d)
             pid = _id(d)
-            all_plays.append(p)
             if p.get("to"):
                 tell(f"chaos__play__{pid}", p["to"], play_push(p))
             # A No-Look Pass: whoever it landed on hears too.
@@ -323,7 +366,7 @@ def run(fs_get, fs_list, fs_patch, send, now=None):
                   "Pick one of four face down in Fumbling. Turn this off in "
                   "the Chaos hub."))
 
-    for d in fs_list("duels"):
+    for d in duels_of():
         duel, did = _doc(d), _id(d)
         status = duel.get("status")
         if status in ("pending", "accepted", "declined", "cancelled"):
@@ -333,36 +376,23 @@ def run(fs_get, fs_list, fs_patch, send, now=None):
             tell(f"chaos__duel__{did}__accepted", duel.get("a"),
                  duel_push(duel, "accepted"))
 
-    # Bets on your slip: a leg whose game id is prop_{owner}_{slip}_{side}.
-    for owner in fs_list("fumbling"):
-        bettor = _id(owner)
-        name = (_doc(owner).get("name") or "Someone")
-        for d in fs_list(f"fumbling/{bettor}/slips"):
-            for leg in _doc(d).get("legs") or []:
-                gid = (leg or {}).get("gameId") or ""
-                if not gid.startswith("prop_"):
-                    continue
-                parts = gid[len("prop_"):].split("_")
-                if len(parts) < 3:
-                    continue
-                target, side = parts[0], parts[-1]
-                what = (leg.get("homeTeam") or "your slip")
-                tell(f"chaos__prop__{_id(d)}", target,
-                     (f"👀 {name} bet on your slip",
-                      f"{name.split(' ')[0]} says it "
-                      f"{'hits' if side == 'hit' else 'misses'}. "
-                      f"({what})"))
+    if props:
+        _tell_props(tell, fs_list,
+                    lambda uid: fs_list(f"fumbling/{uid}/slips"))
 
     # Monday: the Commissioner's balance report, once a week.
     if now.weekday() == 0 and now.hour >= 15:
         monday = now.date().isoformat()
-        players = {m for _, c in crews if c.get("chaos")
-                   for m in (c.get("members") or [])}
-        lines = balance(all_plays, {}, players, now)
-        tell(f"chaos__report__{monday}", COMMISSIONER,
-             ("📊 Chaos balance this week", report_text(lines)))
+        key = f"chaos__report__{monday}"
+        if not notify.already_sent(fs_get, key):
+            players = {m for _, c in crews if c.get("chaos")
+                       for m in (c.get("members") or [])}
+            week = [_doc(d) for cid, _ in crews for d in week_plays_of(cid)]
+            lines = balance(week, {}, players, now)
+            tell(key, COMMISSIONER,
+                 ("📊 Chaos balance this week", report_text(lines)))
 
     if not launched:
         notify.record_sent(fs_patch, LAUNCH_KEY, "chaos", "launch")
         print("  chaos alerts: launched — everything so far marked as told")
-    return sent
+    return sent()

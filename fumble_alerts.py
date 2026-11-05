@@ -432,9 +432,15 @@ def pro_alerts(slip, results, game_of, prefs):
 
 # ── The pass ──────────────────────────────────────────────────────────────
 
-def run(fs_get, fs_list, fs_patch, send):
+def run(fs_get, fs_list, fs_patch, send, slips_of=None, watch=None):
     """Tell everyone about slips that settled since last time. Returns how
-    many pushes went out. [send](uid, title, body) pushes to one person."""
+    many pushes went out. [send](uid, title, body) pushes to one person.
+
+    [slips_of](uid) is the slips to look at, all of a player's by default.
+    [watch], a dict, gets "open" (open slips per game) and "pro" (games on a
+    slip whose owner has Pro alerts on), so a live shift can tell when
+    another pass is worth its reads (nfl_live.slips_due)."""
+    slips_of = slips_of or (lambda uid: fs_list(f"fumbling/{uid}/slips"))
     launched = notify.already_sent(fs_get, LAUNCH_KEY)
     cache = {}
 
@@ -455,9 +461,10 @@ def run(fs_get, fs_list, fs_patch, send):
     popular = {}
     # Each player's Pro alert switches, read once a pass.
     prefs_of = {}
+    pro_games = set()
     for owner in fs_list("fumbling"):
         uid = owner["name"].rsplit("/", 1)[-1]
-        for doc in fs_list(f"fumbling/{uid}/slips"):
+        for doc in slips_of(uid):
             slip = parse_slip(doc)
             # Cashed out early (Oct 10 2026): the owner settled it by hand,
             # so there is nothing to tell them when its games finish.
@@ -472,6 +479,8 @@ def run(fs_get, fs_list, fs_patch, send):
                     doc = fs_get(f"fumbling/{uid}/prefs/alerts") or {}
                     prefs_of[uid] = {k: _value(v) for k, v in
                                      doc.get("fields", {}).items()}
+                if prefs_of[uid].get("sweat"):
+                    pro_games.update(by_id)
                 if launched and prefs_of[uid]:
                     results = [leg_result(l, game_of(l))
                                for l in slip["legs"]]
@@ -512,4 +521,7 @@ def run(fs_get, fs_list, fs_patch, send):
         notify.record_sent(fs_patch, LAUNCH_KEY, "fumble", "launch")
         print("  fumble alerts: launched — every slip already settled marked "
               "as told, nothing sent")
+    if watch is not None:
+        watch["open"] = popular
+        watch["pro"] = pro_games
     return sent

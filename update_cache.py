@@ -473,9 +473,21 @@ def write_json_cache(token, doc_id, payload):
 # Every write this process makes forgets that document (and its
 # collection's list) on the way out — see written(). So nothing here can
 # serve this process its own stale data.
+#
+# Nov 2 2026: the cap was hit by 3 PM on a Monday with no game until night,
+# and Bears–Seahawks fell off the Board (Logan: "bears seahawks game tonight
+# is not showing up"). The alerts pass was reading every slip and card play
+# ever made, every five minutes, so its cost grew with every bet. Hence
+# LIST_MEMORY, OWN_WRITE_MEMORY, fs_where, and the separate cadences in
+# nfl_live.py.
 TICK_MEMORY = 45
 SLOW_MEMORY = 10 * 60
+LIST_MEMORY = 30 * 60   # who plays and who's in a crew: a late joiner can wait
+# Longer than a live tick, so a shift reads its own last write from here
+# instead of Firestore. Shorter than an idle gap, so it never outlives one.
+OWN_WRITE_MEMORY = 150
 _memory = {}            # path -> (read at, value)
+_own_writes = set()     # paths whose memory is this process's own last write
 _kickoffs = []          # every kickoff on the current slate
 READS = {"made": 0, "saved": 0}
 
@@ -491,6 +503,10 @@ def _memory_life(path):
     parts = path.split("/")
     if path in ("groups", "users"):
         return SLOW_MEMORY
+    if path in ("fumbling", "crews", "chaos"):
+        return LIST_MEMORY
+    if path in _own_writes:
+        return OWN_WRITE_MEMORY
     if parts[0] == "users" and (len(parts) == 2 or parts[2:3] == ["devices"]):
         return SLOW_MEMORY
     if parts[0] == "users" and parts[2:3] == ["lineups"]:
@@ -544,9 +560,17 @@ def written(path):
         _remember(path, {"fields": {}})
 
 
+def remember_own_write(path, fields):
+    """This process just wrote [fields] to [path], and will want them again
+    next tick: keep them, so the next tick costs no read."""
+    _own_writes.add(path)
+    _remember(path, {"fields": fields})
+
+
 def forget_reads():
     """Start clean — for tests, and for a shift whose token was renewed."""
     _memory.clear()
+    _own_writes.clear()
 
 
 def fs_get(token, path):
@@ -588,6 +612,26 @@ def fs_list(token, collection):
             READS["made"] += max(1, len(docs))
             _remember(collection, docs)
             return list(docs)
+
+
+def fs_where(token, parent, collection_id, field, op, value):
+    """The documents of one collection that pass one filter. [parent] is the
+    document it sits under, "" for a top-level collection; [value] is a
+    Firestore value. Costs a read per match, and one when nothing matches,
+    so it is how a growing collection stays cheap to look through."""
+    url = f"{FS}/{PARENT}" + (f"/{parent}" if parent else "") + ":runQuery"
+    body = {"structuredQuery": {
+        "from": [{"collectionId": collection_id}],
+        "where": {"fieldFilter": {
+            "field": {"fieldPath": field}, "op": op, "value": value}}}}
+    req = urllib.request.Request(
+        url, data=json.dumps(body).encode(), method="POST",
+        headers={"Authorization": f"Bearer {token}",
+                 "Content-Type": "application/json"})
+    rows = json.load(urllib.request.urlopen(req, timeout=20))
+    docs = [r["document"] for r in rows if "document" in r]
+    READS["made"] += max(1, len(docs))
+    return docs
 
 
 def slots_of(lineup_doc):
@@ -2555,6 +2599,7 @@ def write_nfl_cache(token, include_next=False):
                 headers={"Authorization": f"Bearer {token}",
                          "Content-Type": "application/json"})
             _send_write(req)
+            remember_own_write(path, fields)
         print(f"cached NFL {season} type {stype} week {week}: "
               f"{len(games)} games")
         return games
@@ -2596,16 +2641,18 @@ def write_nba_cache(token, live=False):
             games = nba.parse(data, json.loads(prior_raw) if prior_raw else None)
             if not games and not prior_raw:
                 continue  # an empty night: nothing to write
+            fields = {
+                "gamesJson": {"stringValue": json.dumps(games)},
+                "season": {"integerValue": str(season or 0)},
+                "updatedAt": {"timestampValue": stamp},
+            }
             req = urllib.request.Request(
                 f"{FS}/{PARENT}/cache/nba_{day}",
-                data=json.dumps({"fields": {
-                    "gamesJson": {"stringValue": json.dumps(games)},
-                    "season": {"integerValue": str(season or 0)},
-                    "updatedAt": {"timestampValue": stamp},
-                }}).encode(), method="PATCH",
+                data=json.dumps({"fields": fields}).encode(), method="PATCH",
                 headers={"Authorization": f"Bearer {token}",
                          "Content-Type": "application/json"})
             _send_write(req)
+            remember_own_write(f"cache/nba_{day}", fields)
             written.extend(games)
         if not live and season:
             req = urllib.request.Request(
@@ -2823,11 +2870,24 @@ def update_fumbling_activities(token):
         return 0
 
 
-def notify_fumble_slips(token):
-    """A push for every Fumbling slip that has cashed or fumbled since last
-    time — see fumble_alerts.py — and the friend games' pushes
-    (chaos_alerts.py). Never raises."""
-    import fumble_alerts
+# How far back the alerts look. A slip can wait on next week's NFL game, so
+# about two weeks; older ones are only ever futures, caught by the daily
+# sweep. A card play is told within minutes, so two days covers a broken
+# shift chain. Both exist because these collections only ever grow.
+RECENT_SLIPS = dt.timedelta(days=16)
+RECENT_PLAYS = dt.timedelta(days=2)
+PLAYS_OVERLAP = dt.timedelta(minutes=15)
+_plays_looked_at = None  # when this process last looked through card plays
+
+
+def _since(age):
+    """A cutoff [age] ago, in the app's ISO form. Those sort as strings."""
+    return (dt.datetime.now(dt.timezone.utc) - age
+            ).isoformat().replace("+00:00", "Z")
+
+
+def _push_to_player(token):
+    """How a Fumbling alert reaches one person."""
     import notify
 
     def send(uid, title, body):
@@ -2836,30 +2896,98 @@ def notify_fumble_slips(token):
                 lambda p: fs_list(token, p), uid):
             notify.send_to_token(token, PROJECT, dev, title, body,
                                  route="/fumbling")
+    return send
 
-    n = 0
+
+def _sweep_due(token):
+    """Whether today's look through every slip ever made is still to do."""
+    doc = fs_get(token, "cache/fumble_sweep") or {}
+    day = doc.get("fields", {}).get("day", {}).get("stringValue")
+    return day != dt.datetime.now(dt.timezone.utc).date().isoformat()
+
+
+def notify_slips(token):
+    """Slips that cashed, fumbled or need a Pro alert — see fumble_alerts.py
+    — and bets on someone's slip, which come from the same reads. Returns
+    what the pass saw (fumble_alerts.run's [watch]), for nfl_live.py to
+    decide when it is next worth doing. Never raises."""
+    import chaos_alerts
+    import fumble_alerts
+
+    watch, seen = {}, {}
+    send = _push_to_player(token)
+    get = lambda p: fs_get(token, p)
+    listed = lambda p: fs_list(token, p)
+    patch = lambda p, f: _fs_patch(token, p, f)
     try:
-        n = fumble_alerts.run(lambda p: fs_get(token, p),
-                              lambda p: fs_list(token, p),
-                              lambda p, f: _fs_patch(token, p, f), send)
+        whole = _sweep_due(token)
+        since = _since(RECENT_SLIPS)
+
+        def slips_of(uid):
+            if uid not in seen:
+                seen[uid] = (
+                    listed(f"fumbling/{uid}/slips") if whole else
+                    fs_where(token, f"fumbling/{uid}", "slips", "createdAt",
+                             "GREATER_THAN_OR_EQUAL", {"stringValue": since}))
+            return seen[uid]
+
+        n = fumble_alerts.run(get, listed, patch, send, slips_of=slips_of,
+                              watch=watch)
         if n:
             print(f"fumble alerts: {n} sent")
+        c = chaos_alerts.run_props(get, listed, patch, send, slips_of)
+        if c:
+            print(f"slip bet alerts: {c} sent")
+        if whole:
+            _fs_patch(token, "cache/fumble_sweep", {"day": {
+                "stringValue":
+                    dt.datetime.now(dt.timezone.utc).date().isoformat()}})
     except Exception as e:
         print(f"fumble alerts skipped: {e}")
-    # The friend games ride along (Oct 12 2026): cards played on you, duel
-    # challenges, bets on your slip, the Commissioner's Monday report — see
-    # chaos_alerts.py. Its own failure, never fumble_alerts'.
+    return watch
+
+
+def notify_cards(token):
+    """Cards played on you, duel challenges, your shield and free card, and
+    the Commissioner's Monday report — see chaos_alerts.py. Only plays newer
+    than the last look are read, once this process has made one. Never
+    raises."""
+    import chaos_alerts
+
+    global _plays_looked_at
+    now = dt.datetime.now(dt.timezone.utc)
+    looked = _plays_looked_at
+    since = _since(now - looked + PLAYS_OVERLAP if looked else RECENT_PLAYS)
+    week = _since(dt.timedelta(days=8))
+
+    def plays_after(cutoff):
+        return lambda cid: fs_where(
+            token, f"crews/{cid}", "plays", "at", "GREATER_THAN_OR_EQUAL",
+            {"stringValue": cutoff})
+
     try:
-        import chaos_alerts
-        c = chaos_alerts.run(lambda p: fs_get(token, p),
-                             lambda p: fs_list(token, p),
-                             lambda p, f: _fs_patch(token, p, f), send)
+        c = chaos_alerts.run(
+            lambda p: fs_get(token, p), lambda p: fs_list(token, p),
+            lambda p, f: _fs_patch(token, p, f), _push_to_player(token),
+            plays_of=plays_after(since), week_plays_of=plays_after(week),
+            duels_of=lambda: fs_where(
+                token, "", "duels", "status", "IN",
+                {"arrayValue": {"values": [{"stringValue": "pending"},
+                                           {"stringValue": "accepted"}]}}),
+            props=False)
         if c:
             print(f"chaos alerts: {c} sent")
-        n += c
+        _plays_looked_at = now
+        return c
     except Exception as e:
         print(f"chaos alerts skipped: {e}")
-    return n
+        return 0
+
+
+def notify_fumble_slips(token):
+    """Both passes, for a run that happens a few times a day."""
+    notify_slips(token)
+    notify_cards(token)
 
 
 def write_futures_cache(token, season):

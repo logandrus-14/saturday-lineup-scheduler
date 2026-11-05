@@ -48,9 +48,10 @@ import json
 import os
 import time
 
+from fumble_alerts import is_late  # noqa: E402
 from update_cache import (  # noqa: E402
-    READS, access_token, notify_fumble_slips, update_fumbling_activities,
-    write_daily_cache,
+    READS, access_token, notify_cards, notify_slips,
+    update_fumbling_activities, write_daily_cache,
     write_nba_cache, write_nfl_cache)
 
 MAX_SHIFT = dt.timedelta(hours=5, minutes=30)
@@ -65,8 +66,18 @@ TOKEN_EVERY = dt.timedelta(minutes=45)  # tokens last an hour
 # from here too means one stale writer can't hide them for long.
 NEXT_EVERY = dt.timedelta(minutes=30)
 # How often the shift looks for Fumbling slips that have cashed or fumbled
-# (fumble_alerts.py) — any league's, college included. Oct 8 2026.
-FUMBLE_EVERY = dt.timedelta(minutes=5)
+# (fumble_alerts.py) — any league's, college included. Oct 8 2026, and every
+# five minutes until Nov 2 2026, when that alone used up the free day's
+# 50,000 reads by mid-afternoon. A slip can only settle when one of its games
+# ends, so now a pass runs when a game with a slip on it goes final, and
+# otherwise on a slow clock for what this shift can't see finish: college
+# games (live_refresh.py's), and slips placed since the last pass.
+SLIPS_EVERY = dt.timedelta(hours=1)
+SLIPS_EVERY_SATURDAY = dt.timedelta(minutes=30)  # for those college games
+SLIPS_SOONEST = dt.timedelta(minutes=5)
+SWEAT_EVERY = dt.timedelta(minutes=10)  # Pro's sweat alerts, late in a game
+# Cards played on you need no slips read, so they keep their own clock.
+CARDS_EVERY = dt.timedelta(minutes=10)
 MAX_MISSES = 5  # consecutive ticks that wrote nothing
 
 
@@ -127,6 +138,32 @@ def idle_delay(now, deadline):
     return max(1, min(IDLE_RECHECK, left))
 
 
+def finals(games):
+    return {g.get("id") for g in games if g.get("status") == "final"}
+
+
+def slips_due(games, watch, passed_finals, now, last):
+    """Whether the slip pass is worth its reads this tick. [watch] is what
+    the last pass saw (fumble_alerts.run), [passed_finals] the games already
+    final by then, [last] when it ran."""
+    since = now - last
+    # Saturday where the players are, for college football's long day.
+    saturday = (now - dt.timedelta(hours=7)).weekday() == 5
+    if since >= (SLIPS_EVERY_SATURDAY if saturday else SLIPS_EVERY):
+        return True
+    if since < SLIPS_SOONEST:
+        return False
+    if (finals(games) - passed_finals) & set(watch.get("open") or ()):
+        return True
+    if since < SWEAT_EVERY:
+        return False
+    return any(
+        g.get("id") in (watch.get("pro") or ()) and is_late(g.get("id"), {
+            "live": g.get("status") == "live",
+            "period": g.get("period"), "clock": g.get("clock")})
+        for g in games)
+
+
 def _hand_over(chain):
     """Tell the workflow whether to start the next shift."""
     out = os.environ.get("GITHUB_OUTPUT")
@@ -151,7 +188,8 @@ def _shift():
     deadline = started + MAX_SHIFT
     minted = started
     next_cached = dt.datetime.fromtimestamp(0, dt.timezone.utc)
-    fumbles_checked = next_cached
+    slips_checked = cards_checked = next_cached
+    watch, passed_finals = {}, set()
     misses = 0
     print(f"NFL/NBA shift start {started:%Y-%m-%d %H:%M}Z")
 
@@ -191,9 +229,13 @@ def _shift():
         misses = 0
         # Fumbling's Live Activities move with every tick (never raises).
         update_fumbling_activities(token)
-        if now - fumbles_checked >= FUMBLE_EVERY:
-            notify_fumble_slips(token)  # never raises
-            fumbles_checked = now
+        if slips_due(games, watch, passed_finals, now, slips_checked):
+            watch = notify_slips(token)  # never raises
+            passed_finals = finals(games)
+            slips_checked = now
+        if now - cards_checked >= CARDS_EVERY:
+            notify_cards(token)  # never raises
+            cards_checked = now
 
         delay = next_delay(games, now, deadline)
         if delay is None:
