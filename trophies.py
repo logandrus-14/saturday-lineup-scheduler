@@ -27,7 +27,7 @@ Mirrors, function for function:
 
 import datetime as dt
 
-from scoring import SLOT_POINTS, did_cover
+from scoring import SLOT_POINTS, did_cover, is_push
 
 # Mirrors perfectWeekFloor / bigWeekPoints in trophies.dart.
 PERFECT_WEEK_FLOOR = 4
@@ -65,6 +65,11 @@ def scored_picks_for(week, picks, games):
         covered = did_cover(game, team)
         spread = game.get("spread")
         if covered is None or spread is None:
+            continue
+        # A push is neither a hit nor a miss (Nov 14 2026): it doesn't count
+        # toward a record, a streak or a perfect week. Mirrors
+        # scoredPicksForWeek in scorecard.dart.
+        if is_push(game, team):
             continue
         out.append({
             "week": week,

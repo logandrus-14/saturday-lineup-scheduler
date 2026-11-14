@@ -171,8 +171,8 @@ check("a live game is neither won nor lost",
 # week would stop adding to 28 and `won - lost` would stop agreeing with
 # `2 x won - 28`, which is the identity that makes this safe to use on
 # finished weeks at all. If pushes should ever score differently, that is
-# a decision about the game and it belongs in did_cover, once, not in a
-# second opinion bolted on here.
+# a decision about the game and it belongs in scoring.pick_result, once —
+# which is where "+0 for a push" (Nov 14 2026) went.
 # A second game still being played, so this is a LIVE week and the settled
 # -miss path is what gets exercised. On a completed week the whole 28 is
 # charged anyway and a push would tell us nothing.
@@ -180,8 +180,13 @@ PUSH = [game("1", "A", "B", -3, 23, 20),
         game("9", "Y", "Z", -3, status="scheduled", start=FUTURE)]
 pick = {"qb": {"gameId": "1", "team": "A"}}
 check("a push wins nothing", weekly_points(pick, PUSH) == 0)
-check("and is charged as a miss, exactly as the old formula charged it",
-      weekly_lost(pick, PUSH) == 7)
+# Nov 14 2026, Logan: "Lets do it like an actual sports book, +0 for a
+# push." A push is worth zero — not charged as a miss any more.
+check("and costs nothing either: a push is worth zero",
+      weekly_lost(pick, PUSH) == 0)
+MISS = [game("1", "A", "B", -3, 22, 20),
+        game("9", "Y", "Z", -3, status="scheduled", start=FUTURE)]
+check("while a real miss still costs its points", weekly_lost(pick, MISS) == 7)
 
 print()
 if failures:

@@ -326,11 +326,38 @@ def build_slate(games_raw, lines_raw):
     return deduped
 
 
+def pick_result(game, picked_team):
+    """Mirrors Game.pickResult: "covered", "push" or "missed"; None until final.
+
+    **A PUSH IS WORTH ZERO** — Logan, Nov 14 2026, after Brock's Miami +7
+    lost by exactly 7 and the app said "missed by 0": "Lets do it like an
+    actual sports book, +0 for a push." Exactly on the number neither banks
+    the slot's points nor costs them.
+    """
+    if game.get("status") != "final":
+        return None
+    home, away, spread = (
+        game.get("homeScore"), game.get("awayScore"), game.get("spread"))
+    if home is None or away is None or spread is None:
+        return None
+    home_margin = home - away
+    margin = (home_margin + spread if picked_team == game.get("homeTeam")
+              else -home_margin - spread)
+    if margin > 0:
+        return "covered"
+    return "missed" if margin < 0 else "push"
+
+
+def is_push(game, picked_team):
+    return pick_result(game, picked_team) == "push"
+
+
 def did_cover(game, picked_team):
     """Mirrors Game.didCover. None until the game is final.
 
     Home covers when homeMargin > -spread; away when -homeMargin > spread.
-    A push (exactly on the number) is NOT a cover, matching the app.
+    False includes a PUSH: anything that charges points or counts a loss
+    must use pick_result instead, since a push is worth zero.
     """
     if game.get("status") != "final":
         return None
@@ -436,13 +463,14 @@ def weekly_lost(picks, games, now=None):
 
     Two clocks, then, and they are different on purpose:
 
-      * **a PICK** costs you only once its game is FINAL and did not cover.
-        Until then it is still winnable.
+      * **a PICK** costs you only once its game is FINAL and MISSED (a
+        push, exactly on the number, costs nothing). Until then it is
+        still winnable.
       * **an EMPTY SLOT** costs you from the week's first SATURDAY kickoff
         — see blank_slot_deadline for why that moment and not another.
 
-    Once every game is final both clocks have run and `won + lost == 28`,
-    so `won - lost` equals `2 x won - 28` exactly.
+    Once every game is final both clocks have run and `won + lost + pushed
+    == 28` (no longer `won + lost`, now that a push is worth zero).
     """
     games_by_id = {g["id"]: g for g in games}
     total = 0
@@ -456,7 +484,8 @@ def weekly_lost(picks, games, now=None):
         game = games_by_id.get(str(pick.get("gameId")))
         if game is None:
             continue
-        if did_cover(game, pick.get("team")) is False:
+        # A push costs nothing (Nov 14 2026): only a real miss is charged.
+        if pick_result(game, pick.get("team")) == "missed":
             total += points
 
     deadline = blank_slot_deadline(games)

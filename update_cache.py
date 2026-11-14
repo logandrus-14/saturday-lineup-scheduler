@@ -827,12 +827,15 @@ def notify_finals(token, project, season, week, slate):
                         lambda p: fs_get(token, p), key):
                     continue
 
-                from scoring import did_cover
+                from scoring import pick_result
                 game = by_id[gid_]
                 team = pick.get("team", "your pick")
-                covered = did_cover(game, team)
-                title = "Final" if covered is None else (
-                    f"{team} covered ✅" if covered else f"{team} missed ❌")
+                result = pick_result(game, team)
+                # A push lands exactly on the number: worth zero, not a
+                # miss (Nov 14 2026).
+                title = {"covered": f"{team} covered ✅",
+                         "missed": f"{team} missed ❌",
+                         "push": f"{team} pushed: +0"}.get(result, "Final")
                 body = (f"{game['awayTeam']} {game['awayScore']} — "
                         f"{game['homeTeam']} {game['homeScore']}")
 
@@ -1757,7 +1760,7 @@ def push_live_activities(token, season, week, slate, now):
     scores their refresh — the same wrapper the other notifications get.
     """
     import live_activity
-    from scoring import SLOT_POINTS, did_cover, is_covering
+    from scoring import SLOT_POINTS, did_cover, is_covering, pick_result
 
     p8 = os.environ.get("APNS_KEY_P8", "").replace("\\n", "\n").strip()
     if not p8:
@@ -1812,12 +1815,13 @@ def push_live_activities(token, season, week, slate, now):
                 # to go out as short. The won/lost sums below still score
                 # from did_cover: those are points actually banked.
                 showing = is_covering(game, team)
+                result = pick_result(game, team)
                 if game["status"] == "final":
                     if covered:
                         won += points
-                    else:
-                        # A push is not points in hand either, and counting
-                        # it as lost is how the app's own tally reads.
+                    elif result == "missed":
+                        # A push is worth zero, not lost — the app's own
+                        # tally reads it the same way (Nov 14 2026).
                         lost += points
                 elif game["status"] == "in_progress":
                     playing += 1
@@ -1835,6 +1839,7 @@ def push_live_activities(token, season, week, slate, now):
                             else "live" if game["status"] == "in_progress"
                             else "scheduled"),
                     covered=showing,
+                    push=result == "push",
                     kickoff=_kickoff_label(game.get("startDate")),
                     clock=_game_clock(game),
                 ))

@@ -49,3 +49,17 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
     print("ok")
+
+
+# ── Nov 14 2026: "+0 for a push" ──────────────────────────────────────────
+from scoring import pick_result, is_push  # noqa: E402
+
+_final = {"status": "final", "homeTeam": "Miami Opp", "awayTeam": "Miami",
+          "homeScore": 31, "awayScore": 24, "spread": -7}
+assert pick_result(_final, "Miami") == "push", "Miami +7 losing by 7 is a push"
+assert pick_result(_final, "Miami Opp") == "push", "and for the other side too"
+assert is_push(_final, "Miami")
+assert pick_result(dict(_final, awayScore=25), "Miami") == "covered"
+assert pick_result(dict(_final, awayScore=23), "Miami") == "missed"
+assert pick_result(dict(_final, status="in_progress"), "Miami") is None
+print("push checks pass")

@@ -61,6 +61,7 @@ def build_pick(
     covered,
     kickoff: str,
     clock: str,
+    push: bool = False,
 ) -> dict:
     """Mirrors `liveActivityPick` in Dart. One pick, as the card shows it.
 
@@ -70,7 +71,8 @@ def build_pick(
     one has nothing to say.
     """
     if status == "final":
-        state = "covered" if covered else "missed"
+        # Exactly on the number: worth zero (Nov 14 2026).
+        state = "push" if push else "covered" if covered else "missed"
     elif status == "live":
         state = "live_up" if covered else "live_down"
     else:
@@ -79,6 +81,7 @@ def build_pick(
     detail = {
         "covered": "covered",
         "missed": "missed",
+        "push": "push",
         "live_up": "covering",
         "live_down": "short",
     }.get(state, kickoff)
