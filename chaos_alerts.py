@@ -180,6 +180,17 @@ def passed_push(p):
             f"{via} had a Pass ready. " + (does or "It landed on you."))
 
 
+def talk_push(t, to_owner):
+    """(title, body) for a line of trash talk on a slip (the app's
+    domain/talk.dart): to the slip's owner, or, when the owner answers, to
+    whoever had talked on it."""
+    who = t.get("fromName") or "Someone"
+    text = t.get("text") or ""
+    if to_owner:
+        return f"💬 {who} on your slip", text
+    return f"💬 {who} answered on their slip", text
+
+
 def duel_push(d, stage):
     a, b = d.get("aName") or "Someone", d.get("bName") or "Someone"
     leg = d.get("leg") or {}
@@ -310,7 +321,8 @@ def run_props(fs_get, fs_list, fs_patch, send, slips_of):
 
 
 def run(fs_get, fs_list, fs_patch, send, now=None, plays_of=None,
-        week_plays_of=None, duels_of=None, props=True):
+        week_plays_of=None, duels_of=None, props=True, talk_of=None,
+        thread_of=None):
     """Tell everyone what happened since last time. Returns pushes sent.
 
     [plays_of](crew id) and [duels_of]() are what to look through, everything
@@ -320,6 +332,13 @@ def run(fs_get, fs_list, fs_patch, send, now=None, plays_of=None,
     plays_of = plays_of or (lambda cid: fs_list(f"crews/{cid}/plays"))
     week_plays_of = week_plays_of or plays_of
     duels_of = duels_of or (lambda: fs_list("duels"))
+    # Trash talk (Nov 14 2026): [talk_of](crew id) is what's new; the whole
+    # thread on one slip, [thread_of](crew id, slip id), only when its owner
+    # answers.
+    talk_of = talk_of or (lambda cid: fs_list(f"crews/{cid}/talk"))
+    thread_of = thread_of or (lambda cid, sid: [
+        d for d in fs_list(f"crews/{cid}/talk")
+        if _doc(d).get("slipId") == sid])
     tell, sent, launched = _teller(fs_get, fs_patch, send)
 
     crews = [(_id(d), _doc(d)) for d in fs_list("crews")]
@@ -341,6 +360,22 @@ def run(fs_get, fs_list, fs_patch, send, now=None, plays_of=None,
                              (f"🔌 {p.get('fromName')} pulled the plug",
                               "Stadium Blackout: no bets for anyone in "
                               f"{crew.get('name', 'the crew')} for an hour."))
+
+        # Trash talk: a line on your slip tells you; you answering on your
+        # own slip tells everyone who had talked on it.
+        for d in talk_of(cid):
+            t, tid = _doc(d), _id(d)
+            owner, by = t.get("owner"), t.get("from")
+            if not owner or not by or owner not in members:
+                continue
+            if by != owner:
+                tell(f"chaos__talk__{tid}", owner, talk_push(t, True))
+                continue
+            talkers = {_doc(x).get("from")
+                       for x in thread_of(cid, t.get("slipId"))}
+            for m in sorted(talkers - {owner, None}):
+                if m in members:
+                    tell(f"chaos__talk__{tid}__{m}", m, talk_push(t, False))
 
     # Logan, Oct 15 2026, for build 72: "Your shield is back up" and a
     # morning nudge for the free card (which he can switch off: the chaos

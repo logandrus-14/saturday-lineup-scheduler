@@ -2974,7 +2974,15 @@ def notify_cards(token):
                 token, "", "duels", "status", "IN",
                 {"arrayValue": {"values": [{"stringValue": "pending"},
                                            {"stringValue": "accepted"}]}}),
-            props=False)
+            props=False,
+            # Trash talk since the last look, like the plays; a slip's whole
+            # thread only when its owner answers.
+            talk_of=lambda cid: fs_where(
+                token, f"crews/{cid}", "talk", "at", "GREATER_THAN_OR_EQUAL",
+                {"stringValue": since}),
+            thread_of=lambda cid, sid: fs_where(
+                token, f"crews/{cid}", "talk", "slipId", "EQUAL",
+                {"stringValue": sid or ""}))
         if c:
             print(f"chaos alerts: {c} sent")
         _plays_looked_at = now

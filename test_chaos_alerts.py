@@ -196,5 +196,34 @@ ca.run(fs_get, fs_list, fs_patch, send, now=afternoon)
 check("no nudge outside the morning", [t for _, t, _ in told[before:]
                                         if "free card" in t], [])
 
+# ── Trash talk (Nov 14 2026) ──────────────────────────────────────────────
+
+talk = [
+    # Zane taunts Eric's slip; Eric answers; Eric talks on his own again.
+    doc("crews/c1/talk/t1", {"owner": s("b"), "slipId": s("s1"),
+                             "from": s("a"), "fromName": s("Zane"),
+                             "text": s("🧢 Cap"), "at": s("2026-10-21T16:00:00Z")}),
+    doc("crews/c1/talk/t2", {"owner": s("b"), "slipId": s("s1"),
+                             "from": s("b"), "fromName": s("Eric"),
+                             "text": s("Watch"), "at": s("2026-10-21T16:05:00Z")}),
+    # Someone who isn't in the crew any more: nothing.
+    doc("crews/c1/talk/t3", {"owner": s("x"), "slipId": s("s9"),
+                             "from": s("a"), "fromName": s("Zane"),
+                             "text": s("lol"), "at": s("2026-10-21T16:06:00Z")}),
+]
+lists["crews/c1/talk"] = talk
+before = len(told)
+ca.run(fs_get, fs_list, fs_patch, send, now=afternoon)
+new = [(u, t, b) for u, t, b in told[before:] if "💬" in t]
+check("a taunt tells the slip's owner, an answer tells the taunter", new, [
+    ("b", "💬 Zane on your slip", "🧢 Cap"),
+    ("a", "💬 Eric answered on their slip", "Watch"),
+])
+before = len(told)
+ca.run(fs_get, fs_list, fs_patch, send, now=afternoon)
+check("…each once", [t for _, t, _ in told[before:] if "💬" in t], [])
+check("talk_push", ca.talk_push({"text": "hi"}, True),
+      ("💬 Someone on your slip", "hi"))
+
 print(f"{checks - failures}/{checks} chaos alert checks pass")
 sys.exit(1 if failures else 0)
