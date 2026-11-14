@@ -69,5 +69,15 @@ check("week_of", nfl.week_of(FIX["scheduled"])[1:], (2, 5))
 check("EVEN is +100", nfl._price("EVEN"), 100)
 check("junk price is None", nfl._price("n/a"), None)
 
+# Where to watch (Nov 14 2026): national first, no repeats, None if unlisted.
+check("tv: national first", nfl._tv({"broadcasts": [
+    {"market": "home", "names": ["KTVK"]},
+    {"market": "national", "names": ["NBC", "Peacock"]}],
+    "broadcast": "NBC"}), "NBC | Peacock | KTVK")
+check("tv: the one-line broadcast", nfl._tv({"broadcast": "ESPN+"}), "ESPN+")
+check("tv: local only when nothing else",
+      nfl._tv({"geoBroadcasts": [{"media": {"shortName": "FOX"}}]}), "FOX")
+check("tv: nothing listed", nfl._tv({}), None)
+
 print(f"{checks - failures}/{checks} NFL checks pass")
 sys.exit(1 if failures else 0)

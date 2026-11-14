@@ -224,6 +224,7 @@ def parse(key, boards, prior=None):
                 "clock": _clock(key, comp) if status == "live" else None,
                 "possession": None,
                 "situation": None,
+                "tv": nfl._tv(comp),
                 "homeScore": int(home["score"]) if status != "scheduled"
                 and home.get("score") not in (None, "") else None,
                 "awayScore": int(away["score"]) if status != "scheduled"

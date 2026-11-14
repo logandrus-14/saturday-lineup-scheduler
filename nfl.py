@@ -109,6 +109,31 @@ def _possession(comp, home, away):
     return None
 
 
+def _tv(comp):
+    """Where to watch, as the college cache carries it: networks joined by
+    " | " (Game.whereToWatch turns that into " · "). National broadcasts
+    first, then ESPN's one-line `broadcast`, then the local ones. None when
+    ESPN lists nothing — the app then says nothing rather than guessing.
+    Logan, Nov 14 2026: where to watch on Fumbling's games."""
+    names = []
+
+    def add(n):
+        n = (n or "").strip()
+        if n and n not in names:
+            names.append(n)
+
+    casts = comp.get("broadcasts") or []
+    for b in sorted(casts, key=lambda b: b.get("market") != "national"):
+        for n in b.get("names") or []:
+            add(n)
+    if isinstance(comp.get("broadcast"), str):
+        add(comp["broadcast"])
+    if not names:
+        for g in comp.get("geoBroadcasts") or []:
+            add((g.get("media") or {}).get("shortName"))
+    return " | ".join(names) or None
+
+
 def parse(data, prior=None):
     """ESPN's scoreboard -> the app's game shape. [prior] is the last cached
     list for the same week, whose lines fill in any game ESPN has stopped
@@ -145,6 +170,7 @@ def parse(data, prior=None):
             "situation": ((comp.get("situation") or {})
                           .get("downDistanceText") or None)
             if status == "live" else None,
+            "tv": _tv(comp),
             "homeScore": int(home["score"]) if status != "scheduled"
             and home.get("score") not in (None, "") else None,
             "awayScore": int(away["score"]) if status != "scheduled"
