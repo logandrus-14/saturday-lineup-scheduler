@@ -248,6 +248,20 @@ def parse_slip(doc):
     if stolen is not None:
         legs = [flipped(l) if i == int(stolen) else l
                 for i, l in enumerate(legs)]
+    # Curse (Nov 15 2026): a crewmate's underdog tied on as the last leg.
+    c = f.get("cursedLeg")
+    if isinstance(c, dict):
+        legs.append({
+            "gameId": c.get("gameId", ""),
+            "season": int(c.get("season", 0)),
+            "week": int(c.get("week", 0)),
+            "market": c.get("market", "moneyline"),
+            "home": bool(c.get("home")),
+            "homeTeam": c.get("homeTeam", ""),
+            "awayTeam": c.get("awayTeam", ""),
+            "line": float(c.get("line", 0)),
+            "price": int(c.get("price", -110)),
+        })
     return {"id": doc["name"].rsplit("/", 1)[-1], "legs": legs,
             "stake": float(f.get("stake", 0)),
             "cashOut": f.get("cashOut"),
