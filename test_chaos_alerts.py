@@ -225,5 +225,28 @@ check("…each once", [t for _, t, _ in told[before:] if "💬" in t], [])
 check("talk_push", ca.talk_push({"text": "hi"}, True),
       ("💬 Someone on your slip", "hi"))
 
+# Blocked (Nov 16 2026): Eric blocked Zane, so Zane's next taunt never
+# reaches Eric. Blocking is Eric's choice: only lines TO Eric stop.
+db["fumbling/b/prefs/blocked"] = doc("fumbling/b/prefs/blocked", {
+    "blocked": {"mapValue": {"fields": {"a": s("Zane")}}}})
+lists["crews/c1/talk"] = talk + [
+    doc("crews/c1/talk/t4", {"owner": s("b"), "slipId": s("s1"),
+                             "from": s("a"), "fromName": s("Zane"),
+                             "text": s("Still cap"),
+                             "at": s("2026-10-21T16:10:00Z")}),
+    # Carl talks on Eric's slip: Eric hasn't blocked him.
+    doc("crews/c1/talk/t5", {"owner": s("b"), "slipId": s("s1"),
+                             "from": s("c"), "fromName": s("Carl"),
+                             "text": s("Nice"),
+                             "at": s("2026-10-21T16:11:00Z")}),
+]
+before = len(told)
+ca.run(fs_get, fs_list, fs_patch, send, now=afternoon)
+check("a blocked person's taunt never reaches you",
+      [(u, t) for u, t, _ in told[before:] if "💬" in t],
+      # Carl now talked on Eric's slip, so he hears Eric's earlier answer.
+      [("c", "💬 Eric answered on their slip"),
+       ("b", "💬 Carl on your slip")])
+
 print(f"{checks - failures}/{checks} chaos alert checks pass")
 sys.exit(1 if failures else 0)

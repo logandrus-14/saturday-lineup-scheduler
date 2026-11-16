@@ -341,6 +341,17 @@ def run(fs_get, fs_list, fs_patch, send, now=None, plays_of=None,
         if _doc(d).get("slipId") == sid])
     tell, sent, launched = _teller(fs_get, fs_patch, send)
 
+    # Who each person blocked in trash talk, read once a run and only for
+    # someone a line is about to reach.
+    blocked = {}
+
+    def blocked_of(uid):
+        if uid not in blocked:
+            doc = fs_get(f"fumbling/{uid}/prefs/blocked") or {}
+            b = _doc(doc).get("blocked") if doc else None
+            blocked[uid] = set(b) if isinstance(b, dict) else set()
+        return blocked[uid]
+
     crews = [(_id(d), _doc(d)) for d in fs_list("crews")]
     for cid, crew in crews:
         members = crew.get("members") or []
@@ -362,19 +373,22 @@ def run(fs_get, fs_list, fs_patch, send, now=None, plays_of=None,
                               f"{crew.get('name', 'the crew')} for an hour."))
 
         # Trash talk: a line on your slip tells you; you answering on your
-        # own slip tells everyone who had talked on it.
+        # own slip tells everyone who had talked on it. Never from someone
+        # you blocked (Nov 16 2026: the app's talk_safety_store.dart saves
+        # them in fumbling/{uid}/prefs/blocked).
         for d in talk_of(cid):
             t, tid = _doc(d), _id(d)
             owner, by = t.get("owner"), t.get("from")
             if not owner or not by or owner not in members:
                 continue
             if by != owner:
-                tell(f"chaos__talk__{tid}", owner, talk_push(t, True))
+                if by not in blocked_of(owner):
+                    tell(f"chaos__talk__{tid}", owner, talk_push(t, True))
                 continue
             talkers = {_doc(x).get("from")
                        for x in thread_of(cid, t.get("slipId"))}
             for m in sorted(talkers - {owner, None}):
-                if m in members:
+                if m in members and owner not in blocked_of(m):
                     tell(f"chaos__talk__{tid}__{m}", m, talk_push(t, False))
 
     # Logan, Oct 15 2026, for build 72: "Your shield is back up" and a
