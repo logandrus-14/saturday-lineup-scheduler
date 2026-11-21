@@ -248,5 +248,30 @@ check("a blocked person's taunt never reaches you",
       [("c", "💬 Eric answered on their slip"),
        ("b", "💬 Carl on your slip")])
 
+# Crew invites (Nov 21 2026, build 19): the person invited hears, once.
+def invite(iid, to, frm="a", made="2026-10-21T10:00:00.000000Z"):
+    d = doc(f"crewInvites/{iid}", {
+        "crewId": s("c1"), "crewName": s("OGs"), "from": s(frm),
+        "fromName": s("Logan Andrus"), "to": s(to), "status": s("pending")})
+    d["createTime"] = made
+    return d
+
+
+lists["crewInvites"] = [
+    invite("c1_austin", "austin"),
+    # Joining with a code: written by the joiner to themselves.
+    invite("c1_joiner", "joiner", frm="joiner"),
+    # Long forgotten.
+    invite("c1_old", "old", made="2026-08-01T10:00:00.000000Z"),
+]
+before = len(told)
+ca.run(fs_get, fs_list, fs_patch, send, now=afternoon)
+check("a crew invite tells the person invited, and only them",
+      [(u, t) for u, t, _ in told[before:] if "invited" in t],
+      [("austin", "Logan invited you to OGs")])
+before = len(told)
+ca.run(fs_get, fs_list, fs_patch, send, now=afternoon)
+check("…once", [u for u, t, _ in told[before:] if "invited" in t], [])
+
 print(f"{checks - failures}/{checks} chaos alert checks pass")
 sys.exit(1 if failures else 0)

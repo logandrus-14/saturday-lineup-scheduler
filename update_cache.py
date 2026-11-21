@@ -2980,6 +2980,10 @@ def notify_cards(token):
                 {"arrayValue": {"values": [{"stringValue": "pending"},
                                            {"stringValue": "accepted"}]}}),
             props=False,
+            # Crew invites still waiting for an answer (build 19).
+            invites_of=lambda: fs_where(
+                token, "", "crewInvites", "status", "EQUAL",
+                {"stringValue": "pending"}),
             # Trash talk since the last look, like the plays; a slip's whole
             # thread only when its owner answers.
             talk_of=lambda cid: fs_where(

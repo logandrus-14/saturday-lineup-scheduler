@@ -191,6 +191,21 @@ def talk_push(t, to_owner):
     return f"💬 {who} answered on their slip", text
 
 
+# How old a pending crew invite can be and still be told about — the first
+# run after this shipped saw every pending invite at once.
+INVITE_FRESH = dt.timedelta(days=30)
+
+
+def invite_push(inv):
+    """A crew invite, to the person invited — Logan, Nov 21 2026 (build 19):
+    Austin never saw his, because invites only showed inside the app."""
+    who = (inv.get("fromName") or "Someone").split(" ")[0]
+    crew = inv.get("crewName") or "a crew"
+    return (f"{who} invited you to {crew}",
+            "Your crew on Fumbling, the pretend sportsbook. Open Fumbling "
+            "to join and see each other's slips.")
+
+
 def duel_push(d, stage):
     a, b = d.get("aName") or "Someone", d.get("bName") or "Someone"
     leg = d.get("leg") or {}
@@ -322,7 +337,7 @@ def run_props(fs_get, fs_list, fs_patch, send, slips_of):
 
 def run(fs_get, fs_list, fs_patch, send, now=None, plays_of=None,
         week_plays_of=None, duels_of=None, props=True, talk_of=None,
-        thread_of=None):
+        thread_of=None, invites_of=None):
     """Tell everyone what happened since last time. Returns pushes sent.
 
     [plays_of](crew id) and [duels_of]() are what to look through, everything
@@ -332,6 +347,7 @@ def run(fs_get, fs_list, fs_patch, send, now=None, plays_of=None,
     plays_of = plays_of or (lambda cid: fs_list(f"crews/{cid}/plays"))
     week_plays_of = week_plays_of or plays_of
     duels_of = duels_of or (lambda: fs_list("duels"))
+    invites_of = invites_of or (lambda: fs_list("crewInvites"))
     # Trash talk (Nov 14 2026): [talk_of](crew id) is what's new; the whole
     # thread on one slip, [thread_of](crew id, slip id), only when its owner
     # answers.
@@ -424,6 +440,16 @@ def run(fs_get, fs_list, fs_patch, send, now=None, plays_of=None,
         if status == "accepted":
             tell(f"chaos__duel__{did}__accepted", duel.get("a"),
                  duel_push(duel, "accepted"))
+
+    # Crew invites: the person invited hears, once per invite. Not the one
+    # someone writes themselves joining with a code, and not old ones.
+    for d in invites_of():
+        inv, iid = _doc(d), _id(d)
+        made = _when(d.get("createTime"))
+        if (inv.get("status") == "pending" and inv.get("to")
+                and inv.get("to") != inv.get("from")
+                and (made is None or now - made < INVITE_FRESH)):
+            tell(f"chaos__invite__{iid}", inv["to"], invite_push(inv))
 
     if props:
         _tell_props(tell, fs_list,
