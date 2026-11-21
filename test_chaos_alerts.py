@@ -75,7 +75,7 @@ lists["crews/c1/plays"].append(doc("crews/c1/plays/p2", {
     "at": s("2026-10-14T12:00:00Z")}))
 ca.run(fs_get, fs_list, fs_patch, send, now=now)
 check("a card played on you tells you, and only you", told[-1][0], "b")
-check("…with the card's nickname", told[-1][1], "🃏 Zane played Weather Delay "
+check("…with the card's nickname", told[-1][1], "Zane played Weather Delay "
       "on you")
 check("…and what it does", told[-1][2], "You can't place a bet for an hour.")
 check("…once", ca.run(fs_get, fs_list, fs_patch, send, now=now), 0)

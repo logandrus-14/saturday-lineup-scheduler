@@ -139,9 +139,9 @@ def play_push(p):
                 "Your Flop sold it. They think it landed. Nothing happened.")
     if outcome == "landed" and card == "Steal" and p.get("detail"):
         took = CARDS.get(p["detail"], (p["detail"], ""))[0]
-        return f"🃏 {who} played Steal on you", f"They took your {took}."
+        return f"{who} played Steal on you", f"They took your {took}."
     if outcome == "landed":
-        return f"🃏 {who} played {nick} on you", does or "It landed."
+        return f"{who} played {nick} on you", does or "It landed."
     if outcome == "trapped":
         return (f"🚩 {who} walked into your Trap",
                 f"Their {nick} is gone and they can't bet for 2 hours.")
@@ -411,7 +411,7 @@ def run(fs_get, fs_list, fs_patch, send, now=None, plays_of=None,
                 and st.get("pickDay") != today
                 and st.get("remindCards") is not False):
             tell(f"chaos__daily__{uid}__{today}", uid,
-                 ("🃏 Your free card is ready",
+                 ("Your free card is ready",
                   "Pick one of four face down in Fumbling. Turn this off in "
                   "the Chaos hub."))
 
