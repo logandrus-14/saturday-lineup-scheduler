@@ -206,6 +206,23 @@ def invite_push(inv):
             "to join and see each other's slips.")
 
 
+def report_push(r):
+    """A trash talk line someone reported, to Logan — Nov 21 2026, for the
+    1.0 release: Apple wants reports acted on within a day, and they used
+    to land where only a script could read them. He acts on it from the
+    Commissioner page (talk_moderation.dart)."""
+    rep = r.get("reported") if isinstance(r.get("reported"), dict) else {}
+    who = (rep.get("fromName") or "").split(" ")[0]
+    text = rep.get("text") or ""
+    if len(text) > 100:
+        text = text[:99] + "…"
+    body = (f'{who or "Someone"} said "{text}". ' if text
+            else (r.get("message") or "")[:140] + " ")
+    return ("🚩 Trash talk reported",
+            body + "Open the Commissioner page to remove it, mute them or "
+            "keep it.")
+
+
 def duel_push(d, stage):
     a, b = d.get("aName") or "Someone", d.get("bName") or "Someone"
     leg = d.get("leg") or {}
@@ -337,7 +354,7 @@ def run_props(fs_get, fs_list, fs_patch, send, slips_of):
 
 def run(fs_get, fs_list, fs_patch, send, now=None, plays_of=None,
         week_plays_of=None, duels_of=None, props=True, talk_of=None,
-        thread_of=None, invites_of=None):
+        thread_of=None, invites_of=None, reports_of=None):
     """Tell everyone what happened since last time. Returns pushes sent.
 
     [plays_of](crew id) and [duels_of]() are what to look through, everything
@@ -348,6 +365,9 @@ def run(fs_get, fs_list, fs_patch, send, now=None, plays_of=None,
     week_plays_of = week_plays_of or plays_of
     duels_of = duels_of or (lambda: fs_list("duels"))
     invites_of = invites_of or (lambda: fs_list("crewInvites"))
+    # Reported trash talk (Nov 21 2026): [reports_of]() is the feedback that
+    # might be a new report; only type 'report' that nobody handled counts.
+    reports_of = reports_of or (lambda: fs_list("feedback"))
     # Trash talk (Nov 14 2026): [talk_of](crew id) is what's new; the whole
     # thread on one slip, [thread_of](crew id, slip id), only when its owner
     # answers.
@@ -450,6 +470,12 @@ def run(fs_get, fs_list, fs_patch, send, now=None, plays_of=None,
                 and inv.get("to") != inv.get("from")
                 and (made is None or now - made < INVITE_FRESH)):
             tell(f"chaos__invite__{iid}", inv["to"], invite_push(inv))
+
+    # Reported trash talk: Logan hears, once per report, until he's acted.
+    for d in reports_of():
+        r = _doc(d)
+        if r.get("type") == "report" and not r.get("handled"):
+            tell(f"chaos__talkreport__{_id(d)}", COMMISSIONER, report_push(r))
 
     if props:
         _tell_props(tell, fs_list,

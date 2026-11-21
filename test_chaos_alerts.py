@@ -273,5 +273,35 @@ before = len(told)
 ca.run(fs_get, fs_list, fs_patch, send, now=afternoon)
 check("…once", [u for u, t, _ in told[before:] if "invited" in t], [])
 
+# Reported trash talk (Nov 21 2026): Logan hears, once, until he's acted.
+def feedback(fid, typ, reported=None, handled=None, message="x"):
+    f = {"type": s(typ), "uid": s("b"), "message": s(message)}
+    if reported:
+        f["reported"] = {"mapValue": {"fields": {
+            k: s(v) for k, v in reported.items()}}}
+    if handled:
+        f["handled"] = s(handled)
+    return doc(f"feedback/{fid}", f)
+
+
+lists["feedback"] = [
+    feedback("r1", "report", {"from": "z", "fromName": "Zane Smith",
+                              "crewId": "c1", "talkId": "t1",
+                              "text": "you stink at this"}),
+    feedback("r2", "report", {"from": "z", "crewId": "c1", "talkId": "t2",
+                              "text": "old news"}, handled="removed"),
+    feedback("b1", "bug", message="the app crashed"),
+]
+before = len(told)
+ca.run(fs_get, fs_list, fs_patch, send, now=afternoon)
+check("a report tells Logan, with who and what",
+      [(u, t, b) for u, t, b in told[before:] if "reported" in t],
+      [(ca.COMMISSIONER, "🚩 Trash talk reported",
+        'Zane said "you stink at this". Open the Commissioner page to '
+        "remove it, mute them or keep it.")])
+before = len(told)
+ca.run(fs_get, fs_list, fs_patch, send, now=afternoon)
+check("…once", [t for _, t, _ in told[before:] if "reported" in t], [])
+
 print(f"{checks - failures}/{checks} chaos alert checks pass")
 sys.exit(1 if failures else 0)

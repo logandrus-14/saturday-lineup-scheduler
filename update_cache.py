@@ -2984,6 +2984,11 @@ def notify_cards(token):
             invites_of=lambda: fs_where(
                 token, "", "crewInvites", "status", "EQUAL",
                 {"stringValue": "pending"}),
+            # Feedback since the last look (reports among it go to Logan).
+            # One field, so no index; feedback is a few docs a week.
+            reports_of=lambda: fs_where(
+                token, "", "feedback", "createdAt", "GREATER_THAN_OR_EQUAL",
+                {"timestampValue": since}),
             # Trash talk since the last look, like the plays; a slip's whole
             # thread only when its owner answers.
             talk_of=lambda cid: fs_where(

@@ -126,14 +126,18 @@ quiet = dt.datetime(2026, 10, 14, 18, tzinfo=dt.timezone.utc)  # a Wednesday
 crews_asked = []
 talk_asked = []
 invites_asked = []
+reports_asked = []
 ca.run(ca_db.get, ca_list, lambda p, f: None, lambda *a: None, now=quiet,
        plays_of=lambda cid: crews_asked.append(cid) or [],
        duels_of=lambda: [], props=False,
        talk_of=lambda cid: talk_asked.append(cid) or [],
-       invites_of=lambda: invites_asked.append(1) or [])
+       invites_of=lambda: invites_asked.append(1) or [],
+       reports_of=lambda: reports_asked.append(1) or [])
 check("plays come from plays_of", crews_asked, ["c1"])
 check("talk comes from talk_of", talk_asked, ["c1"])
 check("crew invites come from invites_of (pending only)", invites_asked, [1])
+check("reports come from reports_of (recent feedback only)", reports_asked,
+      [1])
 check("no whole list of plays, duels or slips",
       [p for p in listed if p not in ("crews", "chaos")], [])
 
@@ -144,7 +148,7 @@ ca.run(ca_db.get, ca_list, lambda p, f: None, lambda *a: None, now=monday,
        plays_of=lambda cid: [],
        week_plays_of=lambda cid: week_asked.append(cid) or [],
        duels_of=lambda: [], props=False, talk_of=lambda cid: [],
-       invites_of=lambda: [])
+       invites_of=lambda: [], reports_of=lambda: [])
 check("the report reads the week", week_asked, ["c1"])
 
 # ── Shared memory ─────────────────────────────────────────────────────────
