@@ -2911,6 +2911,111 @@ def _sweep_due(token):
     return day != dt.datetime.now(dt.timezone.utc).date().isoformat()
 
 
+_refereed_at = None  # when this process's referee last looked
+
+
+def referee_slips(token, seen, whole, send):
+    """Flag slips, card hands and ledgers that can't be real — see
+    referee.py. [seen]: uid → the slip docs the alerts pass already read.
+    Hands on the daily sweep; ledgers on Monday's. Never raises."""
+    global _refereed_at
+    import fumble_alerts
+    import referee
+
+    started = dt.datetime.now(dt.timezone.utc)
+    since = (_refereed_at - dt.timedelta(minutes=10)
+             if _refereed_at else None)
+    starts = {}
+
+    def start_of(leg):
+        doc_id = fumble_alerts.cache_doc_for(leg)
+        if doc_id == "futures_results":
+            return None
+        if doc_id not in starts:
+            fields = (fs_get(token, f"cache/{doc_id}") or {}).get(
+                "fields", {})
+            raw = fields.get("gamesJson", {}).get("stringValue")
+            starts[doc_id] = {str(g.get("id")): g.get("startDate")
+                              for g in (json.loads(raw) if raw else [])}
+        return referee._ts(starts[doc_id].get(leg["gameId"]))
+
+    def create_flag(fid, fields):
+        body = {"fields": {
+            **{k: {"stringValue": str(v)} for k, v in fields.items()},
+            "at": {"timestampValue": started.isoformat().replace(
+                "+00:00", "Z")}}}
+        req = urllib.request.Request(
+            f"{FS}/{PARENT}/refereeFlags?documentId={fid}",
+            data=json.dumps(body).encode(), method="POST",
+            headers={"Authorization": f"Bearer {token}",
+                     "Content-Type": "application/json"})
+        try:
+            _send_write(req)
+            return True
+        except urllib.error.HTTPError as e:
+            if e.code == 409:  # flagged before: no second push
+                return False
+            raise
+
+    names = {}
+
+    def name_of(uid):
+        if uid not in names:
+            doc = fs_get(token, f"fumbling/{uid}") or {}
+            names[uid] = doc.get("fields", {}).get("name", {}).get(
+                "stringValue") or "Someone"
+        return names[uid]
+
+    monday = started.weekday() == 0
+    try:
+        n = referee.run(
+            list(seen), lambda uid: seen.get(uid, []), start_of,
+            (lambda uid: (fs_get(token, f"chaos/{uid}") or {}).get("fields"))
+            if whole else None,
+            create_flag, send, since=since, name_of=name_of,
+            ledger_of=(lambda uid: [
+                (d["name"].rsplit("/", 1)[-1], d.get("fields", {}))
+                for d in fs_list(token, f"fumbling/{uid}/ledger")])
+            if whole and monday else None)
+        _refereed_at = started
+        if n:
+            print(f"referee: {n} new flag(s)")
+    except Exception as e:
+        print(f"referee skipped: {e}")
+
+
+def strip_profile_emails(token):
+    """Take emails off public profiles (Nov 21 2026): users/{uid} is
+    readable by anyone who knows the uid, and builds before Fumbling 21 /
+    Saturday Lineup's next still write one there at sign-in. Firebase Auth
+    keeps the real one. Reads only the profiles that have an email (an
+    orderBy on it skips the rest). Never raises."""
+    try:
+        body = {"structuredQuery": {
+            "from": [{"collectionId": "users"}],
+            "orderBy": [{"field": {"fieldPath": "email"}}],
+            "limit": 200}}
+        req = urllib.request.Request(
+            f"{FS}/{PARENT}:runQuery", data=json.dumps(body).encode(),
+            method="POST",
+            headers={"Authorization": f"Bearer {token}",
+                     "Content-Type": "application/json"})
+        rows = json.load(urllib.request.urlopen(req, timeout=20))
+        READS["made"] += max(1, len(rows))
+        docs = [r["document"] for r in rows if "document" in r]
+        for d in docs:
+            path = d["name"].split("/documents/", 1)[1]
+            _send_write(urllib.request.Request(
+                f"{FS}/{PARENT}/{path}?updateMask.fieldPaths=email",
+                data=json.dumps({"fields": {}}).encode(), method="PATCH",
+                headers={"Authorization": f"Bearer {token}",
+                         "Content-Type": "application/json"}))
+        if docs:
+            print(f"profile emails: {len(docs)} taken off")
+    except Exception as e:
+        print(f"profile emails skipped: {e}")
+
+
 def notify_slips(token):
     """Slips that cashed, fumbled or need a Pro alert — see fumble_alerts.py
     — and bets on someone's slip, which come from the same reads. Returns
@@ -2940,6 +3045,11 @@ def notify_slips(token):
                               watch=watch)
         if n:
             print(f"fumble alerts: {n} sent")
+        # The referee looks at the same slips — no reads of its own
+        # beyond game starts for the newly written ones (referee.py).
+        referee_slips(token, seen, whole, send)
+        if whole:
+            strip_profile_emails(token)
         c = chaos_alerts.run_props(get, listed, patch, send, slips_of)
         if c:
             print(f"slip bet alerts: {c} sent")

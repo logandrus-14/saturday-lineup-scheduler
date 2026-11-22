@@ -72,6 +72,9 @@ def slip_result(slip, game_of):
     Miracle Comeback turns a loss into a push; a chaos card's payoutMul
     scales a win."""
     legs = [leg_result(l, game_of(l["gameId"])) for l in slip["legs"]]
+    # Voided by Logan after a referee flag (referee.py): a push, stake back.
+    if slip.get("void"):
+        return "push", slip["stake"]
     if "lost" in legs:
         if slip.get("miracle"):
             return "push", slip["stake"]
@@ -269,6 +272,7 @@ def parse_slip(doc):
             "miracle": bool(f.get("miracle")),
             "boost": f.get("boost"),
             "free": bool(f.get("free")),
+            "void": bool(f.get("void")),
             "createdAt": f.get("createdAt") or ""}
 
 
